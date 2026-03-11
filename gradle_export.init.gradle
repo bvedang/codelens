@@ -1,0 +1,190 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import org.gradle.api.artifacts.ProjectDependency
+import org.gradle.api.artifacts.component.ProjectComponentIdentifier
+
+def workspaceSchemaVersion = 1
+
+gradle.projectsEvaluated {
+	def rootProject = gradle.rootProject
+	def exportProjectTasks = []
+
+	rootProject.allprojects.each { project ->
+		def sourceSets = project.extensions.findByName("sourceSets")
+		if (sourceSets == null) {
+			return
+		}
+
+		def exportTask = project.tasks.register("exportCodeLensProjectModel") {
+			group = "codelens"
+			description = "Export Gradle source-set metadata for CodeLens for ${project.path}."
+
+			doLast {
+				def sourceSetsJson = [:]
+
+				sourceSets.each { sourceSet ->
+					def key = "${project.path}:${sourceSet.name}"
+					def allSourceRoots = sourceSet.allSource.srcDirs
+							.findAll { it != null }
+							.collect { it.absolutePath }
+							.unique()
+							.sort()
+					def generatedRoots = allSourceRoots.findAll { path ->
+						path.contains("${File.separator}build${File.separator}")
+					}
+					def regularRoots = allSourceRoots.findAll { path -> !generatedRoots.contains(path) }
+
+					def outputDirs = []
+					outputDirs.addAll(sourceSet.output.classesDirs.files.collect { it.absolutePath })
+					if (sourceSet.output.resourcesDir != null) {
+						outputDirs.add(sourceSet.output.resourcesDir.absolutePath)
+					}
+					outputDirs = outputDirs.unique().sort()
+
+					def compileClasspathConfiguration = project.configurations.findByName(
+							sourceSet.compileClasspathConfigurationName
+					)
+					def runtimeClasspathConfiguration = project.configurations.findByName(
+							sourceSet.runtimeClasspathConfigurationName
+					)
+
+					def compileClasspathEntries = []
+					try {
+						compileClasspathEntries = (compileClasspathConfiguration?.files ?: [])
+								.collect { it.absolutePath }
+								.unique()
+								.sort()
+					}
+					catch (Exception ignored) {
+					}
+
+					def runtimeClasspathEntries = []
+					try {
+						runtimeClasspathEntries = (runtimeClasspathConfiguration?.files ?: [])
+								.collect { it.absolutePath }
+								.unique()
+								.sort()
+					}
+					catch (Exception ignored) {
+					}
+
+					def collectResolvedArtifacts = { configuration ->
+						def projectArtifacts = []
+						def externalArtifacts = []
+						if (configuration == null || !configuration.canBeResolved) {
+							return [
+									project : projectArtifacts,
+									external: externalArtifacts,
+							]
+						}
+						try {
+							configuration.incoming.artifacts.artifacts.each { artifact ->
+								def file = artifact.file
+								if (file == null) {
+									return
+								}
+								def componentIdentifier = artifact.id.componentIdentifier
+								if (componentIdentifier instanceof ProjectComponentIdentifier) {
+									projectArtifacts.add(file.absolutePath)
+								}
+								else {
+									externalArtifacts.add(file.absolutePath)
+								}
+							}
+						}
+						catch (Exception ignored) {
+						}
+						return [
+								project : projectArtifacts.unique().sort(),
+								external: externalArtifacts.unique().sort(),
+						]
+					}
+
+					def compileArtifacts = collectResolvedArtifacts(compileClasspathConfiguration)
+					def runtimeArtifacts = collectResolvedArtifacts(runtimeClasspathConfiguration)
+					def projectArtifactEntries = (compileArtifacts.project + runtimeArtifacts.project)
+							.unique()
+							.sort()
+					def externalBinaryEntries = (compileArtifacts.external + runtimeArtifacts.external)
+							.unique()
+							.sort()
+
+					def projectDependencies = []
+					[compileClasspathConfiguration, runtimeClasspathConfiguration].findAll { it != null }.each { config ->
+						projectDependencies.addAll(
+								config.allDependencies
+										.withType(ProjectDependency)
+										.collect { dep ->
+											def projectPath = null
+											if (dep.metaClass.respondsTo(dep, "getDependencyProject")) {
+												projectPath = dep.dependencyProject?.path
+											}
+											if (projectPath == null && dep.hasProperty("path")) {
+												projectPath = dep.path
+											}
+											projectPath ? "${projectPath}:main" : null
+										}
+						)
+					}
+					projectDependencies = projectDependencies.findAll { it != null }.unique().sort()
+
+					sourceSetsJson[key] = [
+							source_roots             : regularRoots,
+							generated_source_roots   : generatedRoots,
+							project_dependencies     : projectDependencies,
+							external_jars            : externalBinaryEntries.findAll { it.endsWith(".jar") },
+							project_artifact_entries : projectArtifactEntries,
+							external_binary_entries  : externalBinaryEntries,
+							output_dirs              : outputDirs,
+							compile_classpath_entries: compileClasspathEntries,
+							runtime_classpath_entries: runtimeClasspathEntries,
+					]
+				}
+
+				def outputFile = project.layout.buildDirectory.file("codelens/project-model.json").get().asFile
+				outputFile.parentFile.mkdirs()
+				outputFile.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+						source_sets: sourceSetsJson
+				]))
+			}
+		}
+		exportProjectTasks.add(exportTask)
+	}
+
+	rootProject.tasks.register("exportCodeLensWorkspaceModel") {
+		group = "codelens"
+		description = "Export Gradle source-set metadata for CodeLens."
+		dependsOn(exportProjectTasks)
+
+		doLast {
+			def outputPath = rootProject.findProperty("codelensOutput")
+			if (!outputPath) {
+				throw new GradleException("Missing -PcodelensOutput=/path/to/file.json")
+			}
+
+			def sourceSetsJson = [:]
+			def jsonSlurper = new JsonSlurper()
+
+			rootProject.allprojects.each { project ->
+				def sourceSets = project.extensions.findByName("sourceSets")
+				if (sourceSets == null) {
+					return
+				}
+				def partialFile = project.layout.buildDirectory.file("codelens/project-model.json").get().asFile
+				if (!partialFile.exists()) {
+					return
+				}
+				def partial = jsonSlurper.parse(partialFile)
+				sourceSetsJson.putAll(partial.source_sets ?: [:])
+			}
+
+			def outputFile = new File(outputPath)
+			outputFile.parentFile?.mkdirs()
+			outputFile.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+					schema_version: workspaceSchemaVersion,
+					jdk_home      : System.getProperty("java.home"),
+					source_sets   : sourceSetsJson
+			]))
+		}
+	}
+}
