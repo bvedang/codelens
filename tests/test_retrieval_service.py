@@ -1,6 +1,6 @@
-from codelens.retrieval.db import SQLiteConfig
 from codelens.retrieval.repository import RetrievalDocumentRepository
 from codelens.retrieval.service import RetrievalIndexingService
+from codelens.storage.db import SQLiteConfig
 
 
 def test_service_indexes_java_chunks_into_repository(tmp_path):

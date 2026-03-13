@@ -1,6 +1,6 @@
-from codelens.retrieval.db import SQLiteConfig
 from codelens.retrieval.documents import RetrievalDocument
 from codelens.retrieval.repository import RetrievalDocumentRepository
+from codelens.storage.db import SQLiteConfig
 
 
 def test_repository_round_trips_document(tmp_path):

@@ -1,0 +1,2 @@
+PRAGMA_WAL_MODE = "PRAGMA journal_mode=WAL"
+PRAGMA_FROEIGN_KEYS = "PRAGMA foreign_keys=ON"

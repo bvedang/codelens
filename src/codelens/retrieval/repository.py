@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-from codelens.retrieval.db import SQLiteConfig, connect_sqlite
 from codelens.retrieval.documents import RetrievalDocument
+from codelens.storage.db import SQLiteConfig, connect_sqlite
 
 TABLE_NAME = "retrieval_documents"
 JSON_COLUMN_MAP = {
