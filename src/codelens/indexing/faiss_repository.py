@@ -2,52 +2,19 @@ from __future__ import annotations
 
 import json
 import shutil
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
 
+import faiss
 import numpy as np
 
-
-class MetadataCorruptionError(RuntimeError):
-    pass
-
-
-@dataclass(frozen=True)
-class StoredChunk:
-    chunk_id: str
-    faiss_ids: tuple[int, ...]
-    payload: dict[str, Any]
-    shard: str | None = None
-
-
-@dataclass(frozen=True)
-class LoadedIndex:
-    model_name: str | None
-    indexed_at: str | None
-    vector_size: int
-    index: Any | None
-    chunks: dict[str, StoredChunk]
-
-
-@dataclass(frozen=True)
-class IndexStatus:
-    chunk_count: int
-    indexed_at: str | None
-    model_name: str | None
-
-
-@dataclass(frozen=True)
-class WorkspaceBuildState:
-    status: str
-    workspace_signature: str
-    model_name: str
-    indexed_at: str
-    total_files: int
-    completed_files: tuple[str, ...]
-    failed_files: dict[str, str]
-    documents_indexed: int
-    next_shard_id: int
+from codelens.indexing.models import (
+    IndexStatus,
+    LoadedIndex,
+    MetadataCorruptionError,
+    StoredChunk,
+    WorkspaceBuildState,
+)
 
 
 class FaissIndexRepository:
@@ -59,7 +26,6 @@ class FaissIndexRepository:
         self._state_path = self._index_dir / "state.json"
         self._shards_dir = self._index_dir / "shards"
         self._lock_path = self._index_dir / "index.lock"
-        self._faiss_module = faiss_module
 
     @property
     def index_dir(self) -> Path:
@@ -401,14 +367,13 @@ class FaissIndexRepository:
         vector_size: int,
         path: Path,
     ) -> None:
-        faiss = cast(Any, self._get_faiss())
+
         index = cast(Any, faiss.IndexFlatIP(vector_size))
         index.add(np.asarray(flat_vectors, dtype="float32"))
         faiss.write_index(index, str(path))
         path.touch(exist_ok=True)
 
     def _read_index(self, path: Path):
-        faiss = cast(Any, self._get_faiss())
         return faiss.read_index(str(path))
 
     def _load_metadata(self) -> dict[str, Any] | None:
@@ -474,13 +439,3 @@ class FaissIndexRepository:
     def _clear_shards(self) -> None:
         if self._shards_dir.exists():
             shutil.rmtree(self._shards_dir)
-
-    def _get_faiss(self):
-        if self._faiss_module is not None:
-            return self._faiss_module
-        try:
-            import faiss
-        except ImportError as exc:
-            raise RuntimeError("faiss is required for local indexing") from exc
-        self._faiss_module = faiss
-        return faiss
