@@ -5,9 +5,13 @@ from zipfile import ZipFile
 
 import pytest
 
-from codelens.gradle_model import GradleWorkspaceModel
 from codelens.chunker import parse_java
-from codelens.symbol_index import build_binary_symbol_index, build_jdk_symbol_index, build_source_symbol_index
+from codelens.gradle_model import GradleWorkspaceModel
+from codelens.symbol_index import (
+    build_binary_symbol_index,
+    build_jdk_symbol_index,
+    build_source_symbol_index,
+)
 from codelens.type_resolver import TypeResolver
 
 

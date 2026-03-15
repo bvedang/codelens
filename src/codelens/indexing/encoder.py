@@ -56,6 +56,3 @@ class ColbertEncoder:
                 document_length=self._document_length,
             )
         return self._model
-
-
-FastEmbedColbertEncoder = ColbertEncoder

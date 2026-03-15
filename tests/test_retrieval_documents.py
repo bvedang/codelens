@@ -50,5 +50,5 @@ class OrderService extends BaseOrderService implements Auditable, Runnable {}
     skeleton = _get_document(documents, "skeleton", "OrderService")
 
     assert skeleton.extends_name == "extends BaseOrderService"
-    assert skeleton.implements == ("Auditable", "Runnable")
+    assert skeleton.implements == ["Auditable", "Runnable"]
     assert "extends extends BaseOrderService" in skeleton.retrieval_text

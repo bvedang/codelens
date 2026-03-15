@@ -7,7 +7,7 @@ from codelens.indexing.documents import (
     build_index_documents,
     document_payload,
 )
-from codelens.indexing.encoder import ColbertEncoder, FastEmbedColbertEncoder, LateInteractionEncoder
+from codelens.indexing.encoder import ColbertEncoder, LateInteractionEncoder
 from codelens.indexing.faiss_repository import (
     FaissIndexRepository,
     IndexStatus,
@@ -25,7 +25,6 @@ __all__ = [
     "ColbertEncoder",
     "FaissIndexRepository",
     "FaissIndexingService",
-    "FastEmbedColbertEncoder",
     "IndexDocument",
     "IndexLock",
     "IndexLockError",

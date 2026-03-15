@@ -1,34 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Iterable, Mapping
 
-
-@dataclass(frozen=True)
-class RetrievalDocument:
-    chunk_id: str
-    kind: str
-    name: str | None
-    filepath: str | None
-    repo_root: str | None
-    package_name: str | None
-    owner_chain: tuple[str, ...]
-    source_set: str | None
-    signature: str | None
-    return_type: str | None
-    field_type: str | None
-    component_type: str | None
-    annotations: tuple[str, ...]
-    modifiers: tuple[str, ...]
-    calls: tuple[str, ...]
-    fields_accessed: tuple[str, ...]
-    throws: tuple[str, ...]
-    extends_name: str | None
-    implements: tuple[str, ...]
-    permits: tuple[str, ...]
-    resolved_symbols: tuple[str, ...]
-    text: str
-    retrieval_text: str
+from codelens.models.retrieval_document import RetrievalDocument
 
 
 def build_retrieval_documents(
@@ -61,21 +35,25 @@ def build_retrieval_document(
     repo_root: str | None = None,
     source_set: str | None = None,
 ) -> RetrievalDocument:
-    package_name = _package_name(file_chunk)
-    kind = str(chunk["kind"])
-    name = chunk.get("name")
-    filepath = chunk.get("filepath")
-    owner_chain = tuple(chunk.get("owner_chain", []))
-    annotations = tuple(_annotation_texts(chunk))
-    modifiers = tuple(chunk.get("modifiers", []))
-    calls = tuple(chunk.get("calls", []))
-    fields_accessed = tuple(chunk.get("fields_accessed", []))
-    throws = tuple(chunk.get("throws", []))
-    implements = _split_clause(chunk.get("implements"), "implements")
-    permits = _split_clause(chunk.get("permits"), "permits")
-    signature = _build_signature(chunk)
-    resolved_symbols = _resolved_symbols(chunk)
-    text = chunk.get("text") or ""
+    package_name: str | None = _package_name(file_chunk)
+    kind: str = str(chunk["kind"])
+    name: str | None = chunk.get("name")
+    filepath: str | None = chunk.get("filepath")
+    owner_chain: list[str] = list(chunk.get("owner_chain", []))
+    annotations: list[str] = _annotation_texts(chunk)
+    modifiers: list[str] = list(chunk.get("modifiers", []))
+    calls: list[str] = list(chunk.get("calls", []))
+    fields_accessed: list[str] = list(chunk.get("fields_accessed", []))
+    throws: list[str] = list(chunk.get("throws", []))
+    implements: list[str] = _split_clause(chunk.get("implements"), "implements")
+    permits: list[str] = _split_clause(chunk.get("permits"), "permits")
+    signature: str | None = _build_signature(chunk)
+    resolved_symbols: list[str] = _resolved_symbols(chunk)
+    text: str = chunk.get("text") or ""
+    return_type: str | None = chunk.get("return_type")
+    field_type: str | None = chunk.get("field_type")
+    component_type: str | None = chunk.get("component_type")
+    extends_name: str | None = chunk.get("extends")
 
     return RetrievalDocument(
         chunk_id=str(chunk["chunk_id"]),
@@ -87,15 +65,15 @@ def build_retrieval_document(
         owner_chain=owner_chain,
         source_set=source_set,
         signature=signature,
-        return_type=chunk.get("return_type"),
-        field_type=chunk.get("field_type"),
-        component_type=chunk.get("component_type"),
+        return_type=return_type,
+        field_type=field_type,
+        component_type=component_type,
         annotations=annotations,
         modifiers=modifiers,
         calls=calls,
         fields_accessed=fields_accessed,
         throws=throws,
-        extends_name=chunk.get("extends"),
+        extends_name=extends_name,
         implements=implements,
         permits=permits,
         resolved_symbols=resolved_symbols,
@@ -147,11 +125,11 @@ def _build_signature(chunk: Mapping) -> str | None:
     return None
 
 
-def _resolved_symbols(chunk: Mapping) -> tuple[str, ...]:
-    symbols = []
-    field_type = chunk.get("field_type")
-    component_type = chunk.get("component_type")
-    extends_name = chunk.get("extends")
+def _resolved_symbols(chunk: Mapping) -> list[str]:
+    symbols: list[str] = []
+    field_type: str | None = chunk.get("field_type")
+    component_type: str | None = chunk.get("component_type")
+    extends_name: str | None = chunk.get("extends")
     if field_type:
         symbols.append(field_type)
     if component_type:
@@ -159,14 +137,14 @@ def _resolved_symbols(chunk: Mapping) -> tuple[str, ...]:
     if extends_name:
         symbols.append(extends_name)
     symbols.extend(chunk.get("calls", []))
-    return tuple(dict.fromkeys(symbols))
+    return list(dict.fromkeys(symbols))
 
 
-def _split_clause(value: str | None, keyword: str) -> tuple[str, ...]:
+def _split_clause(value: str | None, keyword: str) -> list[str]:
     if not value:
-        return ()
+        return []
     cleaned = value.replace(f"{keyword} ", "", 1).strip()
-    return tuple(part.strip() for part in cleaned.split(",") if part.strip())
+    return [part.strip() for part in cleaned.split(",") if part.strip()]
 
 
 def _build_retrieval_text(
@@ -175,14 +153,14 @@ def _build_retrieval_text(
     package_name: str | None,
     source_set: str | None,
     signature: str | None,
-    annotations: tuple[str, ...],
-    modifiers: tuple[str, ...],
-    calls: tuple[str, ...],
-    fields_accessed: tuple[str, ...],
-    throws: tuple[str, ...],
-    implements: tuple[str, ...],
-    permits: tuple[str, ...],
-    resolved_symbols: tuple[str, ...],
+    annotations: list[str],
+    modifiers: list[str],
+    calls: list[str],
+    fields_accessed: list[str],
+    throws: list[str],
+    implements: list[str],
+    permits: list[str],
+    resolved_symbols: list[str],
     text: str,
 ) -> str:
     parts: list[str] = []

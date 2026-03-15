@@ -3,22 +3,19 @@ from __future__ import annotations
 from pathlib import Path
 
 from codelens.chunker import parse_java
+from codelens.db.session import get_session
+from codelens.repository.retrieval_document_repo import upsert_documents
 from codelens.retrieval.documents import RetrievalDocument, build_retrieval_documents
-from codelens.retrieval.repository import RetrievalDocumentRepository
 from codelens.type_resolver import TypeResolver
 from codelens.workspace_runtime import parse_java_file_with_workspace
 
 
 class RetrievalIndexingService:
-    def __init__(self, repository: RetrievalDocumentRepository) -> None:
-        self._repository = repository
-
-    def initialize(self) -> None:
-        self._repository.initialize()
 
     def index_chunks(self, chunks: list[dict], *, source_set: str | None = None) -> list[RetrievalDocument]:
         documents = build_retrieval_documents(chunks, source_set=source_set)
-        self._repository.upsert_documents(documents)
+        with get_session() as session:
+            upsert_documents(session, documents)
         return documents
 
     def index_java(
