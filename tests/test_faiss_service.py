@@ -1,4 +1,9 @@
 import json
+from contextlib import contextmanager
+from unittest.mock import patch
+
+import pytest
+from sqlmodel import Session, SQLModel, create_engine
 
 from codelens.indexing.encoder import LateInteractionEncoder
 from codelens.indexing.faiss_repository import FaissIndexRepository
@@ -57,6 +62,20 @@ class _SplittingEncoder(LateInteractionEncoder):
         if len(texts) > 1:
             raise RuntimeError("MPS backend out of memory")
         return [[[1.0, 2.0]] for _ in texts]
+
+
+@pytest.fixture(autouse=True)
+def _db():
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    @contextmanager
+    def _test_session():
+        with Session(engine) as session:
+            yield session
+
+    with patch("codelens.indexing.faiss_repository.get_session", side_effect=_test_session):
+        yield
 
 
 def test_faiss_service_rebuilds_workspace_index(tmp_path):

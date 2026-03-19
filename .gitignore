@@ -19,3 +19,7 @@ htmlcov
 java_repos
 
 .DS_Store
+
+*.db
+
+CLAUDE.md

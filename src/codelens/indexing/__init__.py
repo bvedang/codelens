@@ -8,13 +8,12 @@ from codelens.indexing.documents import (
     document_payload,
 )
 from codelens.indexing.encoder import ColbertEncoder, LateInteractionEncoder
-from codelens.indexing.faiss_repository import (
-    FaissIndexRepository,
+from codelens.indexing.faiss_repository import FaissIndexRepository
+from codelens.indexing.models import (
     IndexStatus,
     LoadedIndex,
     MetadataCorruptionError,
     StoredChunk,
-    WorkspaceBuildState,
 )
 from codelens.indexing.locking import IndexLock, IndexLockError
 from codelens.indexing.service import FaissIndexingService, IndexingResult
@@ -34,7 +33,6 @@ __all__ = [
     "LoadedIndex",
     "MetadataCorruptionError",
     "StoredChunk",
-    "WorkspaceBuildState",
     "build_chunk_id",
     "build_index_document",
     "build_index_documents",

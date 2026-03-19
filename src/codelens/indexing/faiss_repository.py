@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
@@ -8,22 +7,32 @@ from typing import Any, Mapping, Sequence, cast
 import faiss
 import numpy as np
 
+from codelens.db.session import get_session
 from codelens.indexing.models import (
     IndexStatus,
     LoadedIndex,
     MetadataCorruptionError,
-    StoredChunk,
-    WorkspaceBuildState,
+)
+from codelens.logging_config import get_logger
+from codelens.models.index_chunk import IndexBuildState, IndexChunk, IndexMeta
+from codelens.repository.index_chunk_repo import (
+    delete_index_chunks_by_repo,
+    delete_index_metadata,
+    get_index_build_status,
+    get_index_chunks,
+    get_index_metadata,
+    insert_index_chunks,
+    upsert_index_build_status,
+    upsert_index_metadata,
 )
 
+logger = get_logger(__name__)
 
 class FaissIndexRepository:
     def __init__(self, repo_root: str | Path, *, faiss_module=None) -> None:
         self._repo_root = Path(repo_root).resolve()
         self._index_dir = self._repo_root / ".codelens" / "index"
         self._vectors_path = self._index_dir / "vectors.faiss"
-        self._metadata_path = self._index_dir / "metadata.json"
-        self._state_path = self._index_dir / "state.json"
         self._shards_dir = self._index_dir / "shards"
         self._lock_path = self._index_dir / "index.lock"
 
@@ -36,41 +45,22 @@ class FaissIndexRepository:
         return self._lock_path
 
     def load(self) -> LoadedIndex | None:
-        metadata = self._load_metadata()
-        if metadata is None:
-            return None
-
-        raw_chunks = metadata.get("chunks")
-        if not isinstance(raw_chunks, dict):
-            raise MetadataCorruptionError("metadata.json is missing the 'chunks' object")
+        with get_session() as session:
+            index_metadata = get_index_metadata(session, str(self._repo_root))
+            if not index_metadata:
+                logger.warning("<faiss_repository / load>: unable to load index. Repo may not be indexed")
+                return None
+            chunks = get_index_chunks(session, str(self._repo_root))
+            if not chunks:
+                logger.info("<faiss_repository / load>: No chunks found. Repo may not be indexed")
+                return None
 
         index = self._read_index(self._vectors_path) if self._vectors_path.exists() else None
-        chunks: dict[str, StoredChunk] = {}
-        for chunk_id, item in raw_chunks.items():
-            if not isinstance(item, dict):
-                raise MetadataCorruptionError(f"chunk entry {chunk_id!r} is not an object")
-            faiss_ids = item.get("faiss_ids")
-            payload = item.get("payload")
-            shard = item.get("shard")
-            if not isinstance(faiss_ids, list) or not isinstance(payload, dict):
-                raise MetadataCorruptionError(f"chunk entry {chunk_id!r} is malformed")
-            if shard is not None and not isinstance(shard, str):
-                raise MetadataCorruptionError(f"chunk entry {chunk_id!r} has an invalid shard")
-            if shard is None and index is None and raw_chunks:
-                raise MetadataCorruptionError("vectors.faiss is missing")
-            if shard is not None and not (self._shards_dir / shard).exists():
-                raise MetadataCorruptionError(f"shard file is missing for chunk {chunk_id!r}")
-            chunks[str(chunk_id)] = StoredChunk(
-                chunk_id=str(chunk_id),
-                faiss_ids=tuple(int(value) for value in faiss_ids),
-                payload=dict(payload),
-                shard=shard,
-            )
 
         vector_size = int(getattr(index, "d", 0)) if index is not None else 0
         return LoadedIndex(
-            model_name=metadata.get("model"),
-            indexed_at=metadata.get("indexed_at"),
+            model_name=index_metadata.model_name,
+            indexed_at=index_metadata.indexed_at,
             vector_size=vector_size,
             index=index,
             chunks=chunks,
@@ -86,24 +76,9 @@ class FaissIndexRepository:
             model_name=loaded.model_name,
         )
 
-    def load_workspace_state(self) -> WorkspaceBuildState | None:
-        if not self._state_path.exists():
-            return None
-        try:
-            raw = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise MetadataCorruptionError("state.json is not valid JSON") from exc
-        return WorkspaceBuildState(
-            status=str(raw["status"]),
-            workspace_signature=str(raw["workspace_signature"]),
-            model_name=str(raw["model_name"]),
-            indexed_at=str(raw["indexed_at"]),
-            total_files=int(raw["total_files"]),
-            completed_files=tuple(str(item) for item in raw.get("completed_files", [])),
-            failed_files={str(key): str(value) for key, value in raw.get("failed_files", {}).items()},
-            documents_indexed=int(raw.get("documents_indexed", 0)),
-            next_shard_id=int(raw.get("next_shard_id", 0)),
-        )
+    def load_workspace_state(self) -> IndexBuildState | None:
+        with get_session() as session:
+            return get_index_build_status(session,str(self._repo_root))
 
     def start_workspace_build(
         self,
@@ -112,7 +87,7 @@ class FaissIndexRepository:
         workspace_signature: str,
         model_name: str,
         indexed_at: str,
-    ) -> WorkspaceBuildState:
+    ) -> IndexBuildState:
         existing = self.load_workspace_state()
         if (
             existing is not None
@@ -126,25 +101,27 @@ class FaissIndexRepository:
         self._index_dir.mkdir(parents=True, exist_ok=True)
         self._shards_dir.mkdir(parents=True, exist_ok=True)
 
-        metadata = {
-            "model": model_name,
-            "indexed_at": indexed_at,
-            "chunks": {},
-        }
-        state = WorkspaceBuildState(
+        with get_session() as session:
+            upsert_index_metadata(session, IndexMeta(
+                repo_root=str(self._repo_root),
+                model_name=model_name,
+                indexed_at=indexed_at,
+            ))
+
+        state = IndexBuildState(
+            repo_root=str(self._repo_root),
             status="in_progress",
             workspace_signature=workspace_signature,
             model_name=model_name,
             indexed_at=indexed_at,
             total_files=len(filepaths),
-            completed_files=(),
+            completed_files=[],
             failed_files={},
             documents_indexed=0,
             next_shard_id=0,
         )
-        self._write_metadata(metadata)
-        self._write_state(state)
-        return state
+
+        return self._write_state(state)
 
     def append_workspace_file(
         self,
@@ -152,27 +129,25 @@ class FaissIndexRepository:
         workspace_file: str,
         entries: Sequence[Mapping[str, Any]],
         vectors: Sequence[Sequence[Sequence[float]]],
-    ) -> WorkspaceBuildState:
+    ) -> IndexBuildState:
         if len(entries) != len(vectors):
             raise ValueError("entries and vectors must have the same length")
 
-        metadata = self._require_metadata()
         state = self._require_workspace_state()
-        raw_chunks = cast(dict[str, Any], metadata["chunks"])
 
         next_shard_id = state.next_shard_id
         documents_indexed = state.documents_indexed
+
         if entries:
             shard_name = f"{next_shard_id:08d}.faiss"
-            shard_path = self._shards_dir / shard_name
+            chunks, flat_vectors, vector_size = self._build_index_chunks(entries, vectors, shard=shard_name)
+
             self._shards_dir.mkdir(parents=True, exist_ok=True)
-            self._write_index_file(vectors, shard_path)
-            for entry, matrix in zip(entries, vectors, strict=True):
-                raw_chunks[str(entry["chunk_id"])] = {
-                    "faiss_ids": list(range(len(matrix))),
-                    "payload": dict(entry),
-                    "shard": shard_name,
-                }
+            self._write_flat_index(flat_vectors, vector_size, self._shards_dir / shard_name)
+
+            with get_session() as session:
+                insert_index_chunks(session, chunks)
+
             next_shard_id += 1
             documents_indexed += len(entries)
 
@@ -182,31 +157,31 @@ class FaissIndexRepository:
         failed_files = dict(state.failed_files)
         failed_files.pop(workspace_file, None)
 
-        updated_state = WorkspaceBuildState(
+        updated_state = IndexBuildState(
+            repo_root=str(self._repo_root),
             status="in_progress",
             workspace_signature=state.workspace_signature,
             model_name=state.model_name,
             indexed_at=state.indexed_at,
             total_files=state.total_files,
-            completed_files=tuple(completed_files),
+            completed_files=list(completed_files),
             failed_files=failed_files,
             documents_indexed=documents_indexed,
             next_shard_id=next_shard_id,
         )
-        self._write_metadata(metadata)
-        self._write_state(updated_state)
-        return updated_state
+        return self._write_state(updated_state)
 
     def mark_workspace_file_failed(
         self,
         *,
         workspace_file: str,
         error: str,
-    ) -> WorkspaceBuildState:
+    ) -> IndexBuildState:
         state = self._require_workspace_state()
         failed_files = dict(state.failed_files)
         failed_files[workspace_file] = error
-        updated_state = WorkspaceBuildState(
+        updated_state = IndexBuildState(
+            repo_root=str(self._repo_root),
             status="in_progress",
             workspace_signature=state.workspace_signature,
             model_name=state.model_name,
@@ -220,22 +195,22 @@ class FaissIndexRepository:
         self._write_state(updated_state)
         return updated_state
 
-    def complete_workspace_build(self) -> WorkspaceBuildState:
+    def complete_workspace_build(self) -> IndexBuildState:
         state = self._require_workspace_state()
         final_status = "completed" if not state.failed_files else "partial"
-        updated_state = WorkspaceBuildState(
+        updated_state = IndexBuildState(
+            repo_root=str(self._repo_root),
             status=final_status,
             workspace_signature=state.workspace_signature,
             model_name=state.model_name,
             indexed_at=state.indexed_at,
             total_files=state.total_files,
-            completed_files=state.completed_files,
+            completed_files=list(state.completed_files),
             failed_files=state.failed_files,
             documents_indexed=state.documents_indexed,
             next_shard_id=state.next_shard_id,
         )
-        self._write_state(updated_state)
-        return updated_state
+        return self._write_state(updated_state)
 
     def save(
         self,
@@ -250,44 +225,18 @@ class FaissIndexRepository:
 
         self._index_dir.mkdir(parents=True, exist_ok=True)
         self._clear_shards()
-        if self._state_path.exists():
-            self._state_path.unlink()
 
-        flat_vectors: list[list[float]] = []
-        chunks: dict[str, dict[str, Any]] = {}
-        next_id = 0
-        vector_size = 0
-
-        for entry, matrix in zip(entries, vectors, strict=True):
-            chunk_id = str(entry["chunk_id"])
-            faiss_ids: list[int] = []
-            for row in matrix:
-                if not row:
-                    continue
-                current_size = len(row)
-                if vector_size == 0:
-                    vector_size = current_size
-                elif vector_size != current_size:
-                    raise ValueError("all FAISS vectors must have the same size")
-                flat_vectors.append([float(value) for value in row])
-                faiss_ids.append(next_id)
-                next_id += 1
-            chunks[chunk_id] = {
-                "faiss_ids": faiss_ids,
-                "payload": dict(entry),
-            }
-
+        chunks, flat_vectors, vector_size = self._build_index_chunks(entries, vectors)
         if flat_vectors:
             self._write_flat_index(flat_vectors, vector_size, self._vectors_path)
         elif self._vectors_path.exists():
             self._vectors_path.unlink()
-
-        metadata = {
-            "model": model_name,
-            "indexed_at": indexed_at,
-            "chunks": chunks,
-        }
-        self._write_metadata(metadata)
+        with get_session() as session:
+            delete_index_chunks_by_repo(session, str(self._repo_root))
+            insert_index_chunks(session, chunks)
+            upsert_index_metadata(session,
+                IndexMeta(repo_root=str(self._repo_root), model_name=model_name, indexed_at=indexed_at)
+            )
 
     def entries_with_vectors(
         self,
@@ -376,66 +325,63 @@ class FaissIndexRepository:
     def _read_index(self, path: Path):
         return faiss.read_index(str(path))
 
-    def _load_metadata(self) -> dict[str, Any] | None:
-        if not self._metadata_path.exists():
-            if self._vectors_path.exists():
-                raise MetadataCorruptionError("metadata.json is missing")
-            return None
-        try:
-            return json.loads(self._metadata_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise MetadataCorruptionError("metadata.json is not valid JSON") from exc
-
-    def _require_metadata(self) -> dict[str, Any]:
-        metadata = self._load_metadata()
-        if metadata is None:
-            raise MetadataCorruptionError("metadata.json is missing")
-        if not isinstance(metadata.get("chunks"), dict):
-            raise MetadataCorruptionError("metadata.json is missing the 'chunks' object")
-        return metadata
-
-    def _require_workspace_state(self) -> WorkspaceBuildState:
+    def _require_workspace_state(self) -> IndexBuildState:
         state = self.load_workspace_state()
         if state is None:
             raise MetadataCorruptionError("state.json is missing")
         return state
 
-    def _write_metadata(self, metadata: Mapping[str, Any]) -> None:
-        self._write_json(self._metadata_path, metadata)
+    def _write_state(self, state: IndexBuildState) -> IndexBuildState:
+        with get_session() as session:
+            return upsert_index_build_status(session, state)
 
-    def _write_state(self, state: WorkspaceBuildState) -> None:
-        payload = {
-            "status": state.status,
-            "workspace_signature": state.workspace_signature,
-            "model_name": state.model_name,
-            "indexed_at": state.indexed_at,
-            "total_files": state.total_files,
-            "completed_files": list(state.completed_files),
-            "failed_files": state.failed_files,
-            "documents_indexed": state.documents_indexed,
-            "next_shard_id": state.next_shard_id,
-        }
-        self._write_json(self._state_path, payload)
-
-    def _write_json(self, path: Path, payload: Mapping[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(path.suffix + ".tmp")
-        tmp_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-        tmp_path.replace(path)
 
     def _reset_index_dir(self) -> None:
         self._index_dir.mkdir(parents=True, exist_ok=True)
         if self._vectors_path.exists():
             self._vectors_path.unlink()
-        if self._metadata_path.exists():
-            self._metadata_path.unlink()
-        if self._state_path.exists():
-            self._state_path.unlink()
         self._clear_shards()
+        with get_session() as session:
+            delete_index_chunks_by_repo(session, str(self._repo_root))
+            delete_index_metadata(session, str(self._repo_root))
+
 
     def _clear_shards(self) -> None:
         if self._shards_dir.exists():
             shutil.rmtree(self._shards_dir)
+
+
+    def _build_index_chunks(
+        self,
+        entries: Sequence[Mapping[str, Any]],
+        vectors: Sequence[Sequence[Sequence[float]]],
+        *,
+        shard: str | None = None,
+    ) -> tuple[list[IndexChunk], list[list[float]], int]:
+        flat_vectors: list[list[float]] = []
+        chunks: list[IndexChunk] = []
+        next_id = 0
+        vector_size = 0
+
+        for entry, matrix in zip(entries, vectors, strict=True):
+            chunk_id = str(entry["chunk_id"])
+            faiss_ids: list[int] = []
+            for row in matrix:
+                if not row:
+                    continue
+                current_size = len(row)
+                if vector_size == 0:
+                    vector_size = current_size
+                elif vector_size != current_size:
+                    raise ValueError("all FAISS vectors must have the same size")
+                flat_vectors.append([float(value) for value in row])
+                faiss_ids.append(next_id)
+                next_id += 1
+            chunks.append(IndexChunk(
+                chunk_id=chunk_id,
+                repo_root=str(self._repo_root),
+                faiss_ids=faiss_ids,
+                payload=dict(entry),
+                shard=shard,
+            ))
+        return chunks, flat_vectors, vector_size

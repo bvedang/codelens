@@ -1,4 +1,8 @@
+from contextlib import contextmanager
+from unittest.mock import patch
+
 import pytest
+from sqlmodel import Session, SQLModel, create_engine
 
 from codelens.indexing.faiss_repository import FaissIndexRepository
 
@@ -28,6 +32,20 @@ class _FakeFaiss:
 
     def read_index(self, path):
         return self.saved[path]
+
+
+@pytest.fixture(autouse=True)
+def _db():
+    engine = create_engine("sqlite://", echo=False)
+    SQLModel.metadata.create_all(engine)
+
+    @contextmanager
+    def _test_session():
+        with Session(engine) as session:
+            yield session
+
+    with patch("codelens.indexing.faiss_repository.get_session", side_effect=_test_session):
+        yield
 
 
 def test_faiss_repository_persists_metadata_and_vectors(tmp_path):
@@ -131,7 +149,7 @@ def test_faiss_repository_checkpoints_workspace_shards_and_resume_state(tmp_path
             [[0.1, 0.2]],
         ],
     )
-    assert state.completed_files == ("/repo/src/Keep.java",)
+    assert state.completed_files == ["/repo/src/Keep.java"]
     assert state.documents_indexed == 1
 
     resumed = repository.start_workspace_build(
@@ -140,7 +158,7 @@ def test_faiss_repository_checkpoints_workspace_shards_and_resume_state(tmp_path
         model_name="lightonai/ColBERT-Zero",
         indexed_at="2026-03-10T00:00:01+00:00",
     )
-    assert resumed.completed_files == ("/repo/src/Keep.java",)
+    assert resumed.completed_files == ["/repo/src/Keep.java"]
     assert resumed.documents_indexed == 1
 
     final_state = repository.complete_workspace_build()
