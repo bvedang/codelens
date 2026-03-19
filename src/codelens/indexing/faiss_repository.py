@@ -31,6 +31,7 @@ logger = get_logger(__name__)
 class FaissIndexRepository:
     def __init__(self, repo_root: str | Path, *, faiss_module=None) -> None:
         self._repo_root = Path(repo_root).resolve()
+        self._repo_key = str(self._repo_root)
         self._index_dir = self._repo_root / ".codelens" / "index"
         self._vectors_path = self._index_dir / "vectors.faiss"
         self._shards_dir = self._index_dir / "shards"
@@ -46,11 +47,11 @@ class FaissIndexRepository:
 
     def load(self) -> LoadedIndex | None:
         with get_session() as session:
-            index_metadata = get_index_metadata(session, str(self._repo_root))
+            index_metadata = get_index_metadata(session, self._repo_key)
             if not index_metadata:
                 logger.warning("<faiss_repository / load>: unable to load index. Repo may not be indexed")
                 return None
-            chunks = get_index_chunks(session, str(self._repo_root))
+            chunks = get_index_chunks(session, self._repo_key)
             if not chunks:
                 logger.info("<faiss_repository / load>: No chunks found. Repo may not be indexed")
                 return None
@@ -67,18 +68,20 @@ class FaissIndexRepository:
         )
 
     def status(self) -> IndexStatus | None:
-        loaded = self.load()
-        if loaded is None:
-            return None
+        with get_session() as session:
+            metadata = get_index_metadata(session, self._repo_key)
+            if not metadata:
+                return None
+            chunks = get_index_chunks(session, self._repo_key)
         return IndexStatus(
-            chunk_count=len(loaded.chunks),
-            indexed_at=loaded.indexed_at,
-            model_name=loaded.model_name,
+            chunk_count=len(chunks),
+            indexed_at=metadata.indexed_at,
+            model_name=metadata.model_name,
         )
 
     def load_workspace_state(self) -> IndexBuildState | None:
         with get_session() as session:
-            return get_index_build_status(session,str(self._repo_root))
+            return get_index_build_status(session, self._repo_key)
 
     def start_workspace_build(
         self,
@@ -103,13 +106,13 @@ class FaissIndexRepository:
 
         with get_session() as session:
             upsert_index_metadata(session, IndexMeta(
-                repo_root=str(self._repo_root),
+                repo_root=self._repo_key,
                 model_name=model_name,
                 indexed_at=indexed_at,
             ))
 
         state = IndexBuildState(
-            repo_root=str(self._repo_root),
+            repo_root=self._repo_key,
             status="in_progress",
             workspace_signature=workspace_signature,
             model_name=model_name,
@@ -157,19 +160,13 @@ class FaissIndexRepository:
         failed_files = dict(state.failed_files)
         failed_files.pop(workspace_file, None)
 
-        updated_state = IndexBuildState(
-            repo_root=str(self._repo_root),
-            status="in_progress",
-            workspace_signature=state.workspace_signature,
-            model_name=state.model_name,
-            indexed_at=state.indexed_at,
-            total_files=state.total_files,
-            completed_files=list(completed_files),
-            failed_files=failed_files,
-            documents_indexed=documents_indexed,
-            next_shard_id=next_shard_id,
-        )
-        return self._write_state(updated_state)
+        updated = state.model_copy(update={
+            "completed_files": completed_files,
+            "failed_files": failed_files,
+            "documents_indexed": documents_indexed,
+            "next_shard_id": next_shard_id,
+        })
+        return self._write_state(updated)
 
     def mark_workspace_file_failed(
         self,
@@ -180,37 +177,14 @@ class FaissIndexRepository:
         state = self._require_workspace_state()
         failed_files = dict(state.failed_files)
         failed_files[workspace_file] = error
-        updated_state = IndexBuildState(
-            repo_root=str(self._repo_root),
-            status="in_progress",
-            workspace_signature=state.workspace_signature,
-            model_name=state.model_name,
-            indexed_at=state.indexed_at,
-            total_files=state.total_files,
-            completed_files=state.completed_files,
-            failed_files=failed_files,
-            documents_indexed=state.documents_indexed,
-            next_shard_id=state.next_shard_id,
-        )
-        self._write_state(updated_state)
-        return updated_state
+        updated = state.model_copy(update={"failed_files": failed_files})
+        return self._write_state(updated)
 
     def complete_workspace_build(self) -> IndexBuildState:
         state = self._require_workspace_state()
         final_status = "completed" if not state.failed_files else "partial"
-        updated_state = IndexBuildState(
-            repo_root=str(self._repo_root),
-            status=final_status,
-            workspace_signature=state.workspace_signature,
-            model_name=state.model_name,
-            indexed_at=state.indexed_at,
-            total_files=state.total_files,
-            completed_files=list(state.completed_files),
-            failed_files=state.failed_files,
-            documents_indexed=state.documents_indexed,
-            next_shard_id=state.next_shard_id,
-        )
-        return self._write_state(updated_state)
+        updated = state.model_copy(update={"status": final_status})
+        return self._write_state(updated)
 
     def save(
         self,
@@ -232,10 +206,10 @@ class FaissIndexRepository:
         elif self._vectors_path.exists():
             self._vectors_path.unlink()
         with get_session() as session:
-            delete_index_chunks_by_repo(session, str(self._repo_root))
+            delete_index_chunks_by_repo(session, self._repo_key)
             insert_index_chunks(session, chunks)
             upsert_index_metadata(session,
-                IndexMeta(repo_root=str(self._repo_root), model_name=model_name, indexed_at=indexed_at)
+                IndexMeta(repo_root=self._repo_key, model_name=model_name, indexed_at=indexed_at)
             )
 
     def entries_with_vectors(
@@ -289,27 +263,6 @@ class FaissIndexRepository:
             rows.append([float(value) for value in vector])
         return rows
 
-    def _write_index_file(
-        self,
-        vectors: Sequence[Sequence[Sequence[float]]],
-        path: Path,
-    ) -> None:
-        flat_vectors: list[list[float]] = []
-        vector_size = 0
-        for matrix in vectors:
-            for row in matrix:
-                if not row:
-                    continue
-                current_size = len(row)
-                if vector_size == 0:
-                    vector_size = current_size
-                elif vector_size != current_size:
-                    raise ValueError("all FAISS vectors must have the same size")
-                flat_vectors.append([float(value) for value in row])
-        if not flat_vectors:
-            raise ValueError("cannot write an empty shard")
-        self._write_flat_index(flat_vectors, vector_size, path)
-
     def _write_flat_index(
         self,
         flat_vectors: Sequence[Sequence[float]],
@@ -320,7 +273,6 @@ class FaissIndexRepository:
         index = cast(Any, faiss.IndexFlatIP(vector_size))
         index.add(np.asarray(flat_vectors, dtype="float32"))
         faiss.write_index(index, str(path))
-        path.touch(exist_ok=True)
 
     def _read_index(self, path: Path):
         return faiss.read_index(str(path))
@@ -328,7 +280,7 @@ class FaissIndexRepository:
     def _require_workspace_state(self) -> IndexBuildState:
         state = self.load_workspace_state()
         if state is None:
-            raise MetadataCorruptionError("state.json is missing")
+            raise MetadataCorruptionError("workspace build state is missing")
         return state
 
     def _write_state(self, state: IndexBuildState) -> IndexBuildState:
@@ -342,8 +294,8 @@ class FaissIndexRepository:
             self._vectors_path.unlink()
         self._clear_shards()
         with get_session() as session:
-            delete_index_chunks_by_repo(session, str(self._repo_root))
-            delete_index_metadata(session, str(self._repo_root))
+            delete_index_chunks_by_repo(session, self._repo_key)
+            delete_index_metadata(session, self._repo_key)
 
 
     def _clear_shards(self) -> None:
@@ -379,7 +331,7 @@ class FaissIndexRepository:
                 next_id += 1
             chunks.append(IndexChunk(
                 chunk_id=chunk_id,
-                repo_root=str(self._repo_root),
+                repo_root=self._repo_key,
                 faiss_ids=faiss_ids,
                 payload=dict(entry),
                 shard=shard,
