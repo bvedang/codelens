@@ -7,6 +7,9 @@ with relationship metadata for the context-engine retrieval pipeline.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from typing import Any
+
 from codelens.ast_helpers import (
     chunk_id,
     comment_metadata,
@@ -14,8 +17,9 @@ from codelens.ast_helpers import (
     field_type_str,
     finalize_chunk,
     first_named,
+    location_metadata,
     node_name,
-    text,
+    node_text,
 )
 from codelens.constants import (
     BEHAVIOR_NODES,
@@ -41,6 +45,10 @@ from codelens.type_resolver import TypeResolver
 
 parser = JAVA_PARSER
 logger = get_logger(__name__)
+ChunkData = dict[str, Any]
+FileContext = dict[str, Any]
+FieldTypeMap = dict[str, str]
+RecordComponent = dict[str, str]
 
 
 def method_metadata(
@@ -54,11 +62,11 @@ def method_metadata(
     meta = {}
     ret = node.child_by_field_name("type")
     if ret:
-        meta["return_type"] = text(code, ret)
+        meta["return_type"] = node_text(code, ret)
 
     params = node.child_by_field_name("parameters")
     if params:
-        meta["parameters"] = text(code, params)
+        meta["parameters"] = node_text(code, params)
 
     meta["annotations"] = extract_annotations_full(code, node, file_ctx, resolver)
     meta["modifiers"] = extract_modifiers(code, node)
@@ -87,25 +95,25 @@ def type_metadata(code: bytes, node, file_ctx: dict, resolver: TypeResolver) -> 
     meta = {}
     superclass = node.child_by_field_name("superclass")
     if superclass:
-        meta["extends"] = text(code, superclass)
+        meta["extends"] = node_text(code, superclass)
 
     interfaces = node.child_by_field_name("interfaces")
     if interfaces:
-        meta["implements"] = text(code, interfaces)
+        meta["implements"] = node_text(code, interfaces)
 
     permits = node.child_by_field_name("permits")
     if permits:
-        meta["permits"] = text(code, permits)
+        meta["permits"] = node_text(code, permits)
 
     type_params = node.child_by_field_name("type_parameters")
     if type_params:
-        meta["type_parameters"] = text(code, type_params)
+        meta["type_parameters"] = node_text(code, type_params)
 
     meta["annotations"] = extract_annotations_full(code, node, file_ctx, resolver)
     meta["modifiers"] = extract_modifiers(code, node)
 
     if superclass:
-        st = text(code, superclass)
+        st = node_text(code, superclass)
         meta["is_exception"] = any(
             kw in st for kw in ("Exception", "Error", "Throwable")
         )
@@ -149,7 +157,7 @@ def build_skeleton(
     fields = []
     method_sigs = []
     enum_constants = []
-    record_components = []
+    record_components: list[RecordComponent] = []
 
     if node.type == "record_declaration":
         record_components = extract_record_components(code, node)
@@ -157,7 +165,7 @@ def build_skeleton(
     if body:
         for child in body.named_children:
             if child.type in {"field_declaration", "constant_declaration"}:
-                fields.append(text(code, child).strip())
+                fields.append(node_text(code, child).strip())
             elif child.type in {
                 "method_declaration",
                 "constructor_declaration",
@@ -166,11 +174,11 @@ def build_skeleton(
                 sig_parts = []
                 for part in child.named_children:
                     if part.type not in ("block", "constructor_body"):
-                        sig_parts.append(text(code, part))
+                        sig_parts.append(node_text(code, part))
                 method_sigs.append(" ".join(sig_parts))
             elif child.type == "enum_constant":
                 enum_constants.append(
-                    node_name(code, child) or text(code, child).strip()
+                    node_name(code, child) or node_text(code, child).strip()
                 )
 
     skeleton_text = _assemble_skeleton_text(
@@ -194,6 +202,7 @@ def build_skeleton(
         "owner_chain": owner_chain[:],
         "filepath": filepath,
         "span": [node.start_byte, node.end_byte],
+        **location_metadata(node),
         "text": skeleton_text,
         "embed_text": ctx_header + skeleton_text,
         "fields": fields,
@@ -228,7 +237,7 @@ def _assemble_skeleton_text(
 
     tp = node.child_by_field_name("type_parameters")
     if tp:
-        decl_parts.append(text(code, tp))
+        decl_parts.append(node_text(code, tp))
 
     if record_components:
         comp_str = ", ".join(
@@ -239,15 +248,15 @@ def _assemble_skeleton_text(
 
     superclass = node.child_by_field_name("superclass")
     if superclass:
-        decl_parts.append(text(code, superclass))
+        decl_parts.append(node_text(code, superclass))
 
     interfaces = node.child_by_field_name("interfaces")
     if interfaces:
-        decl_parts.append(text(code, interfaces))
+        decl_parts.append(node_text(code, interfaces))
 
     permits = node.child_by_field_name("permits")
     if permits:
-        decl_parts.append(text(code, permits))
+        decl_parts.append(node_text(code, permits))
 
     lines.append(" ".join(decl_parts))
 
@@ -266,15 +275,16 @@ def _assemble_skeleton_text(
     return "\n".join(lines)
 
 
-def file_context(code: bytes, root) -> dict:
-    ctx = {"package": None, "imports": [], "module": None}
+def file_context(code: bytes, root) -> FileContext:
+    imports: list[str] = []
+    ctx: FileContext = {"package": None, "imports": imports, "module": None}
     for child in root.named_children:
         if child.type == "package_declaration":
-            ctx["package"] = text(code, child)
+            ctx["package"] = node_text(code, child)
         elif child.type == "import_declaration":
-            ctx["imports"].append(text(code, child))
+            imports.append(node_text(code, child))
         elif child.type == "module_declaration":
-            ctx["module"] = text(code, child)
+            ctx["module"] = node_text(code, child)
     return ctx
 
 
@@ -299,7 +309,8 @@ def scan_behavior(
                     "owner_chain": owner_chain[:],
                     "filepath": filepath,
                     "span": [node.start_byte, node.end_byte],
-                    "text": text(code, node),
+                    **location_metadata(node),
+                    "text": node_text(code, node),
                 },
                 enclosing_type,
             )
@@ -311,7 +322,9 @@ def scan_behavior(
             anon_body = first_named(node, "class_body")
         if anon_body:
             anon_type = node.child_by_field_name("type")
-            anon_name = f"<anon:{text(code, anon_type)}>" if anon_type else "<anon>"
+            anon_name = (
+                f"<anon:{node_text(code, anon_type)}>" if anon_type else "<anon>"
+            )
             ctx_header = build_context_header(
                 owner_chain + [anon_name], file_ctx, class_fields, filepath
             )
@@ -323,8 +336,9 @@ def scan_behavior(
                         "owner_chain": owner_chain[:],
                         "filepath": filepath,
                         "span": [node.start_byte, node.end_byte],
-                        "text": text(code, node),
-                        "embed_text": ctx_header + text(code, node),
+                        **location_metadata(node),
+                        "text": node_text(code, node),
+                        "embed_text": ctx_header + node_text(code, node),
                         "node_type": node.type,
                     },
                     enclosing_type,
@@ -355,8 +369,9 @@ def scan_behavior(
                     "owner_chain": owner_chain[:],
                     "filepath": filepath,
                     "span": [node.start_byte, node.end_byte],
-                    "text": text(code, node),
-                    "embed_text": ctx_header + text(code, node),
+                    **location_metadata(node),
+                    "text": node_text(code, node),
+                    "embed_text": ctx_header + node_text(code, node),
                     "node_type": node.type,
                 },
                 enclosing_type,
@@ -425,7 +440,8 @@ def walk(
                     "owner_chain": owner_chain[:],
                     "filepath": filepath,
                     "span": [node.start_byte, node.end_byte],
-                    "text": text(code, node),
+                    **location_metadata(node),
+                    "text": node_text(code, node),
                 },
                 enclosing_type,
             )
@@ -439,7 +455,7 @@ def walk(
 
         if type_size <= SMALL_TYPE_CHAR_LIMIT:
             ctx_header = build_context_header(owner_chain, file_ctx, [], filepath)
-            full_text = text(code, node)
+            full_text = node_text(code, node)
             if leading_comment:
                 full_text = leading_comment + "\n" + full_text
             chunks.append(
@@ -450,6 +466,7 @@ def walk(
                         "owner_chain": owner_chain[:],
                         "filepath": filepath,
                         "span": [node.start_byte, node.end_byte],
+                        **location_metadata(node),
                         "text": full_text,
                         "embed_text": ctx_header + full_text,
                         "type_kind": node.type,
@@ -504,6 +521,7 @@ def walk(
                             "owner_chain": next_owner[:],
                             "filepath": filepath,
                             "span": [node.start_byte, node.end_byte],
+                            **location_metadata(node),
                             "text": f"{comp['type']} {comp['name']}",
                             "embed_text": ctx_header + f"{comp['type']} {comp['name']}",
                             "component_type": comp["type"],
@@ -538,8 +556,9 @@ def walk(
                     "owner_chain": owner_chain[:],
                     "filepath": filepath,
                     "span": [node.start_byte, node.end_byte],
-                    "text": text(code, node),
-                    "embed_text": ctx_header + text(code, node),
+                    **location_metadata(node),
+                    "text": node_text(code, node),
+                    "embed_text": ctx_header + node_text(code, node),
                     "calls": extract_calls(node, field_type_map, file_ctx, resolver),
                 },
                 enclosing_type,
@@ -557,8 +576,9 @@ def walk(
                     "owner_chain": owner_chain[:],
                     "filepath": filepath,
                     "span": [node.start_byte, node.end_byte],
-                    "text": text(code, node),
-                    "embed_text": ctx_header + text(code, node),
+                    **location_metadata(node),
+                    "text": node_text(code, node),
+                    "embed_text": ctx_header + node_text(code, node),
                     "calls": extract_calls(node, field_type_map, file_ctx, resolver),
                 },
                 enclosing_type,
@@ -583,7 +603,7 @@ def walk(
 
         if node.type in {"field_declaration", "constant_declaration"}:
             for declared_name in declarator_names(code, node):
-                raw = text(code, node)
+                raw = node_text(code, node)
                 embed = (
                     ctx_header
                     + (leading_comment + "\n" if leading_comment else "")
@@ -597,6 +617,7 @@ def walk(
                             "owner_chain": owner_chain[:],
                             "filepath": filepath,
                             "span": [node.start_byte, node.end_byte],
+                            **location_metadata(node),
                             "text": raw,
                             "embed_text": embed,
                             "node_type": node.type,
@@ -619,7 +640,7 @@ def walk(
             meta = method_metadata(
                 code, node, class_fields, field_type_map, file_ctx, resolver
             )
-            raw = text(code, node)
+            raw = node_text(code, node)
             embed = (
                 ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
             )
@@ -632,6 +653,7 @@ def walk(
                         "owner_chain": owner_chain[:],
                         "filepath": filepath,
                         "span": [node.start_byte, node.end_byte],
+                        **location_metadata(node),
                         "text": raw,
                         "embed_text": embed,
                         "node_type": node.type,
@@ -643,7 +665,7 @@ def walk(
             )
 
         elif node.type == "enum_constant":
-            raw = text(code, node)
+            raw = node_text(code, node)
             embed = (
                 ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
             )
@@ -655,6 +677,7 @@ def walk(
                         "owner_chain": owner_chain[:],
                         "filepath": filepath,
                         "span": [node.start_byte, node.end_byte],
+                        **location_metadata(node),
                         "text": raw,
                         "embed_text": embed,
                         "node_type": node.type,
@@ -683,7 +706,7 @@ def walk(
                     )
 
         else:
-            raw = text(code, node)
+            raw = node_text(code, node)
             embed = (
                 ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
             )
@@ -695,6 +718,7 @@ def walk(
                         "owner_chain": owner_chain[:],
                         "filepath": filepath,
                         "span": [node.start_byte, node.end_byte],
+                        **location_metadata(node),
                         "text": raw,
                         "embed_text": embed,
                         "node_type": node.type,
@@ -774,6 +798,7 @@ def parse_java(
                 "kind": "file",
                 "filepath": filepath,
                 "span": [root.start_byte, root.end_byte],
+                **location_metadata(root),
                 "package": file_ctx.get("package"),
                 "imports": file_ctx.get("imports", []),
                 "module": file_ctx.get("module"),
@@ -793,29 +818,48 @@ def parse_java(
     return chunks
 
 
-def dedup_rerank_results(chunks: list[dict], limit: int | None = None) -> list[dict]:
+def dedup_rerank_results(
+    chunks: list[ChunkData], limit: int | None = None
+) -> list[ChunkData]:
     """Keep the first ranked chunk for each enclosing type skeleton."""
-    deduped = []
-    seen_groups = set()
+    deduped: list[ChunkData] = []
+    seen_groups: set[str] = set()
 
     for chunk in chunks:
         group_id = chunk.get("parent_chunk_id")
         if group_id is None and chunk.get("kind") in {"type", "skeleton"}:
+            owner_chain_value = chunk.get("owner_chain")
+            owner_chain = (
+                [str(item) for item in owner_chain_value]
+                if isinstance(owner_chain_value, Sequence)
+                else []
+            )
+            name_value = chunk.get("name")
+            span_value = chunk.get("span")
+            span = (
+                [int(value) for value in span_value if isinstance(value, (int, str))]
+                if isinstance(span_value, Sequence)
+                else [0, 0]
+            )
             group_id = chunk_id(
-                chunk.get("filepath"),
+                str(chunk.get("filepath"))
+                if chunk.get("filepath") is not None
+                else None,
                 "skeleton",
-                chunk.get("owner_chain", []),
-                chunk.get("name"),
-                chunk["span"],
+                owner_chain,
+                str(name_value) if name_value is not None else None,
+                span,
             )
         if group_id is None:
-            group_id = chunk.get("chunk_id")
+            chunk_id_value = chunk.get("chunk_id")
+            group_id = str(chunk_id_value) if chunk_id_value is not None else None
 
         if group_id in seen_groups:
             continue
 
         deduped.append(chunk)
-        seen_groups.add(group_id)
+        if group_id is not None:
+            seen_groups.add(group_id)
 
         if limit is not None and len(deduped) >= limit:
             break

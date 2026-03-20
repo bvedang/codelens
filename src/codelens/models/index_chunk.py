@@ -11,7 +11,7 @@ class IndexChunk(SQLModel, table=True):
     chunk_id: str = Field(primary_key=True)
     repo_root: str
     faiss_ids: list[int] = Field(sa_column=Column(JSON, nullable=False))
-    payload: dict = Field(sa_column=Column(JSON, nullable=False))
+    payload: dict[str, object] = Field(sa_column=Column(JSON, nullable=False))
     shard: str | None = None
 
 

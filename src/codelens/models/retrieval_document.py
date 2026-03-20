@@ -10,7 +10,7 @@ class RetrievalDocument(SQLModel, table=True):
         Index("ix_name", "name"),
         Index("ix_filepath", "filepath"),
         Index("ix_repo_root", "repo_root"),
-    )  # type: ignore[assignment]
+    )
 
     chunk_id: str = Field(primary_key=True)
     kind: str
@@ -22,6 +22,10 @@ class RetrievalDocument(SQLModel, table=True):
         default_factory=list, sa_column=Column(JSON, nullable=False)
     )
     source_set: str | None = None
+    start_line: int | None = None
+    end_line: int | None = None
+    start_col: int | None = None
+    end_col: int | None = None
     signature: str | None = None
     return_type: str | None = None
     field_type: str | None = None

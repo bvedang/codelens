@@ -165,6 +165,8 @@ class OrderService {
     assert status is not None
     assert status.chunk_count == result.documents_indexed
     assert status.model_name == "ColBERT-Zero-supervised"
+    retained = repository.entries_with_vectors()
+    assert any(payload.get("start_line") is not None for payload, _ in retained)
 
 
 def test_faiss_service_logs_workspace_progress(tmp_path, caplog):

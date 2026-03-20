@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import shutil
+from collections import defaultdict
 from hashlib import sha1
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
@@ -13,19 +15,20 @@ from codelens.indexing.models import (
     LoadedIndex,
     MetadataCorruptionError,
 )
-from codelens.logging_config import get_logger
+from codelens.logging_config import get_logger, log_event
 from codelens.models.index_chunk import IndexBuildState, IndexChunk, IndexMeta
 from codelens.repository.index_chunk_repo import (
-    delete_index_chunks_by_prefix,
     delete_index_chunks_by_repo,
     delete_index_metadata,
     get_index_build_status,
     get_index_chunks,
     get_index_metadata,
     insert_index_chunks,
+    replace_index_chunks_by_prefix,
     upsert_index_build_status,
     upsert_index_metadata,
 )
+from codelens.timing import Stopwatch
 
 logger = get_logger(__name__)
 
@@ -147,28 +150,38 @@ class FaissIndexRepository:
             raise ValueError("entries and vectors must have the same length")
 
         state = self._require_workspace_state()
+        relative_file_path = self._relative_file_path(workspace_file)
+        chunk_id_prefix = f"{self._repo_hash}:{relative_file_path}:"
 
         next_shard_id = state.next_shard_id
         documents_indexed = state.documents_indexed
 
+        # Build chunks and write the shard file BEFORE touching the database.
+        # This keeps the FAISS file consistent with what the DB will reference.
+        new_chunks: list[IndexChunk] = []
         if entries:
             shard_name = f"{next_shard_id:08d}.faiss"
-            chunks, flat_vectors, vector_size = self._build_index_chunks(
+            new_chunks, flat_vectors, vector_size = self._build_index_chunks(
                 entries, vectors, shard=shard_name
             )
-
             self._shards_dir.mkdir(parents=True, exist_ok=True)
             self._write_flat_index(
                 flat_vectors, vector_size, self._shards_dir / shard_name
             )
 
-            with get_session() as session:
-                for chunk_id_prefix in self._chunk_id_prefixes(entries):
-                    delete_index_chunks_by_prefix(
-                        session, self._repo_key, chunk_id_prefix
-                    )
-                insert_index_chunks(session, chunks)
+        # Atomic delete-then-insert: old chunks are never missing without
+        # their replacements being present in the same committed transaction.
+        with get_session() as session:
+            removed_count = replace_index_chunks_by_prefix(
+                session,
+                self._repo_key,
+                chunk_id_prefix,
+                new_chunks,
+            )
 
+        if removed_count:
+            documents_indexed = max(0, documents_indexed - removed_count)
+        if entries:
             next_shard_id += 1
             documents_indexed += len(entries)
 
@@ -267,6 +280,205 @@ class FaissIndexRepository:
             )
         return retained
 
+    def search(
+        self,
+        query_vectors: Sequence[Sequence[float]],
+        *,
+        top_k: int = 5,
+        kind: str | None = None,
+        source_set: str | None = None,
+        file_path: str | None = None,
+    ) -> list[tuple[dict[str, Any], float]]:
+        if top_k <= 0:
+            return []
+
+        loaded = self.load()
+        if loaded is None or not query_vectors:
+            return []
+
+        candidate_ids = self._candidate_chunk_ids(
+            loaded=loaded,
+            query_vectors=query_vectors,
+            top_k=top_k,
+            kind=kind,
+            source_set=source_set,
+            file_path=file_path,
+        )
+        if not candidate_ids:
+            return []
+
+        matches: list[tuple[dict[str, Any], float]] = []
+        shard_cache: dict[str, Any] = {}
+
+        for chunk_id in candidate_ids:
+            chunk = loaded.chunks[chunk_id]
+            payload = dict(chunk.payload)
+            document_vectors = self._reconstruct_vectors(
+                loaded=loaded,
+                faiss_ids=chunk.faiss_ids,
+                shard=chunk.shard,
+                shard_cache=shard_cache,
+            )
+            if not document_vectors:
+                continue
+            score = _late_interaction_score(query_vectors, document_vectors)
+            matches.append((payload, score))
+
+        matches.sort(key=lambda item: (-item[1], str(item[0].get("chunk_id", ""))))
+        return matches[:top_k]
+
+    def _candidate_chunk_ids(
+        self,
+        *,
+        loaded: LoadedIndex,
+        query_vectors: Sequence[Sequence[float]],
+        top_k: int,
+        kind: str | None,
+        source_set: str | None,
+        file_path: str | None,
+    ) -> list[str]:
+        candidate_limit = max(top_k * 20, 100)
+        per_query_limit = max(top_k * 8, 32)
+
+        filtered_chunks = [
+            chunk
+            for chunk in loaded.chunks.values()
+            if chunk.faiss_ids
+            and _matches_search_filters(
+                chunk.payload,
+                kind=kind,
+                source_set=source_set,
+                file_path=file_path,
+            )
+        ]
+        if not filtered_chunks:
+            return []
+
+        if len(filtered_chunks) <= candidate_limit:
+            return [
+                chunk.chunk_id
+                for chunk in sorted(filtered_chunks, key=lambda item: item.chunk_id)
+            ]
+
+        faiss = self._faiss()
+        if hasattr(faiss, "omp_set_num_threads"):
+            faiss.omp_set_num_threads(1)
+            log_event(
+                logger,
+                level=logging.INFO,
+                message="Configured FAISS search threads",
+                threads=1,
+            )
+
+        query_matrix = _prepare_query_matrix(query_vectors)
+        shard_groups = _group_chunks_by_shard(filtered_chunks)
+        shard_cache: dict[str, Any] = {}
+        candidate_scores: dict[str, float] = defaultdict(float)
+        total_shards = len(shard_groups)
+        progress_timer = Stopwatch.start()
+
+        log_event(
+            logger,
+            level=logging.INFO,
+            message="Starting FAISS candidate retrieval",
+            shards=total_shards,
+            filtered_chunks=len(filtered_chunks),
+            candidate_limit=candidate_limit,
+            per_query_limit=per_query_limit,
+            query_rows=int(query_matrix.shape[0]),
+            query_dim=int(query_matrix.shape[1]) if query_matrix.ndim == 2 else 0,
+            query_min=float(np.min(query_matrix)) if query_matrix.size else 0.0,
+            query_max=float(np.max(query_matrix)) if query_matrix.size else 0.0,
+        )
+
+        for shard_index, (shard, chunks) in enumerate(shard_groups.items(), start=1):
+            should_log_shard = (
+                shard_index == 1 or shard_index == total_shards or shard_index % 50 == 0
+            )
+            if should_log_shard:
+                log_event(
+                    logger,
+                    level=logging.INFO,
+                    message="Opening FAISS shard",
+                    shard=shard or "vectors.faiss",
+                    shard_index=shard_index,
+                    total_shards=total_shards,
+                    shard_chunks=len(chunks),
+                    elapsed_ms=progress_timer.elapsed_ms,
+                )
+            index = self._search_index(
+                loaded=loaded,
+                shard=shard,
+                shard_cache=shard_cache,
+            )
+            if should_log_shard:
+                log_event(
+                    logger,
+                    level=logging.INFO,
+                    message="Opened FAISS shard",
+                    shard=shard or "vectors.faiss",
+                    shard_index=shard_index,
+                    total_shards=total_shards,
+                    elapsed_ms=progress_timer.elapsed_ms,
+                )
+            faiss_id_to_chunk = _faiss_id_to_chunk_map(chunks)
+            if not faiss_id_to_chunk:
+                continue
+
+            limit = min(per_query_limit, len(faiss_id_to_chunk))
+            if should_log_shard:
+                log_event(
+                    logger,
+                    level=logging.INFO,
+                    message="Searching FAISS shard",
+                    shard=shard or "vectors.faiss",
+                    shard_index=shard_index,
+                    total_shards=total_shards,
+                    shard_vectors=len(faiss_id_to_chunk),
+                    search_limit=limit,
+                    elapsed_ms=progress_timer.elapsed_ms,
+                )
+            raw_scores, raw_ids = index.search(query_matrix, limit)
+            if should_log_shard:
+                log_event(
+                    logger,
+                    level=logging.INFO,
+                    message="Searched FAISS shard",
+                    shard=shard or "vectors.faiss",
+                    shard_index=shard_index,
+                    total_shards=total_shards,
+                    elapsed_ms=progress_timer.elapsed_ms,
+                )
+            for score_row, id_row in zip(raw_scores, raw_ids, strict=True):
+                row_best: dict[str, float] = {}
+                for score, faiss_id in zip(score_row, id_row, strict=True):
+                    faiss_id_int = int(faiss_id)
+                    if faiss_id_int < 0:
+                        continue
+                    chunk_id = faiss_id_to_chunk.get(faiss_id_int)
+                    if chunk_id is None:
+                        continue
+                    score_value = float(score)
+                    previous = row_best.get(chunk_id)
+                    if previous is None or score_value > previous:
+                        row_best[chunk_id] = score_value
+                for chunk_id, score in row_best.items():
+                    candidate_scores[chunk_id] += score
+
+            if should_log_shard:
+                log_event(
+                    logger,
+                    level=logging.INFO,
+                    message="FAISS candidate retrieval progress",
+                    shards_processed=shard_index,
+                    total_shards=total_shards,
+                    candidate_chunks=len(candidate_scores),
+                    elapsed_ms=progress_timer.elapsed_ms,
+                )
+
+        ranked = sorted(candidate_scores.items(), key=lambda item: (-item[1], item[0]))
+        return [chunk_id for chunk_id, _ in ranked[:candidate_limit]]
+
     def _reconstruct_vectors(
         self,
         *,
@@ -292,6 +504,23 @@ class FaissIndexRepository:
             vector = index.reconstruct(int(faiss_id))
             rows.append([float(value) for value in vector])
         return rows
+
+    def _search_index(
+        self,
+        *,
+        loaded: LoadedIndex,
+        shard: str | None,
+        shard_cache: dict[str, Any],
+    ):
+        if shard is None:
+            if loaded.index is None:
+                raise MetadataCorruptionError(
+                    "cannot search vectors without a FAISS index"
+                )
+            return cast(Any, loaded.index)
+        if shard not in shard_cache:
+            shard_cache[shard] = self._read_index(self._shards_dir / shard)
+        return cast(Any, shard_cache[shard])
 
     def _write_flat_index(
         self,
@@ -375,8 +604,76 @@ class FaissIndexRepository:
             self._faiss_module = faiss
         return self._faiss_module
 
-    def _chunk_id_prefixes(self, entries: Sequence[Mapping[str, Any]]) -> set[str]:
-        file_paths = {
-            str(entry["file_path"]) for entry in entries if entry.get("file_path")
-        }
-        return {f"{self._repo_hash}:{file_path}:" for file_path in file_paths}
+    def _relative_file_path(self, workspace_file: str | Path) -> str:
+        path = Path(workspace_file).resolve()
+        try:
+            return path.relative_to(self._repo_root).as_posix()
+        except ValueError as exc:
+            raise MetadataCorruptionError(
+                f"workspace file is outside repo root: {path}"
+            ) from exc
+
+
+def _matches_search_filters(
+    payload: Mapping[str, Any],
+    *,
+    kind: str | None,
+    source_set: str | None,
+    file_path: str | None,
+) -> bool:
+    if kind and payload.get("chunk_kind") != kind:
+        return False
+    if source_set and payload.get("source_set") != source_set:
+        return False
+    if file_path and payload.get("file_path") != file_path:
+        return False
+    return True
+
+
+def _late_interaction_score(
+    query_vectors: Sequence[Sequence[float]],
+    document_vectors: Sequence[Sequence[float]],
+) -> float:
+    total = 0.0
+    for query_vector in query_vectors:
+        best = float("-inf")
+        for document_vector in document_vectors:
+            score = _dot_product(query_vector, document_vector)
+            if score > best:
+                best = score
+        if best != float("-inf"):
+            total += best
+    return total
+
+
+def _dot_product(left: Sequence[float], right: Sequence[float]) -> float:
+    if len(left) != len(right):
+        raise ValueError("query and document vectors must have the same length")
+    return float(sum(float(a) * float(b) for a, b in zip(left, right, strict=True)))
+
+
+def _prepare_query_matrix(query_vectors: Sequence[Sequence[float]]) -> np.ndarray:
+    matrix = np.asarray(query_vectors, dtype="float32")
+    if matrix.ndim != 2:
+        raise ValueError("query vectors must be a 2D matrix")
+    if matrix.size == 0:
+        return np.ascontiguousarray(matrix)
+    matrix = np.nan_to_num(matrix, nan=0.0, posinf=0.0, neginf=0.0)
+    return np.ascontiguousarray(matrix)
+
+
+def _group_chunks_by_shard(
+    chunks: Sequence[IndexChunk] | Sequence[Any],
+) -> dict[str | None, list[Any]]:
+    grouped: dict[str | None, list[Any]] = defaultdict(list)
+    for chunk in chunks:
+        grouped[chunk.shard].append(chunk)
+    return grouped
+
+
+def _faiss_id_to_chunk_map(chunks: Sequence[Any]) -> dict[int, str]:
+    mapping: dict[int, str] = {}
+    for chunk in chunks:
+        for faiss_id in chunk.faiss_ids:
+            mapping[int(faiss_id)] = str(chunk.chunk_id)
+    return mapping

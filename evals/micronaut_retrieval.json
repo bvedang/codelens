@@ -1,0 +1,193 @@
+{
+  "benchmark_version": "micronaut-retrieval-v1",
+  "repo_name": "micronaut-core",
+  "repo_commit": "6a11a05950f36193bd865d6b25c2bc17dfb4ff1c",
+  "model_name": "lightonai/ColBERT-Zero",
+  "top_k": 5,
+  "line_tolerance": 25,
+  "cases": [
+    {
+      "case_id": "bean_lookup_impl",
+      "query": "where is bean lookup implemented",
+      "primary_paths": [
+        "inject/src/main/java/io/micronaut/context/DefaultBeanContext.java"
+      ],
+      "primary_symbols": [
+        "DefaultBeanContext.getBean",
+        "DefaultBeanContext.findBean",
+        "DefaultBeanContext.resolveBeanRegistration"
+      ],
+      "primary_line_ranges": [
+        [780, 830],
+        [2350, 2650]
+      ],
+      "primary_lines": [786, 798, 816, 821, 2360, 2625, 2640],
+      "secondary_paths": [
+        "inject/src/main/java/io/micronaut/inject/provider/BeanProviderDefinition.java",
+        "inject/src/main/java/io/micronaut/inject/provider/JakartaProviderBeanDefinition.java",
+        "inject/src/main/java/io/micronaut/inject/provider/JavaxProviderBeanDefinition.java"
+      ]
+    },
+    {
+      "case_id": "bean_resolution_context",
+      "query": "how is bean resolution context implemented",
+      "primary_paths": [
+        "inject/src/main/java/io/micronaut/context/DefaultBeanResolutionContext.java"
+      ],
+      "primary_symbols": [
+        "DefaultBeanResolutionContext",
+        "DefaultBeanResolutionContext.copy"
+      ],
+      "primary_line_ranges": [[30, 70]],
+      "primary_lines": [33, 45],
+      "secondary_paths": [
+        "inject/src/main/java/io/micronaut/context/BeanResolutionContext.java",
+        "inject/src/main/java/io/micronaut/context/AbstractBeanResolutionContext.java"
+      ]
+    },
+    {
+      "case_id": "proxy_target_resolution",
+      "query": "where is proxy target bean resolved",
+      "primary_paths": [
+        "inject/src/main/java/io/micronaut/context/DefaultBeanContext.java"
+      ],
+      "primary_symbols": [
+        "DefaultBeanContext.getProxyTargetBean",
+        "DefaultBeanContext.resolveBeanRegistration"
+      ],
+      "primary_line_ranges": [
+        [1425, 1480],
+        [2350, 2650]
+      ],
+      "primary_lines": [1431, 1437, 1453, 1473, 2360, 2625, 2640],
+      "secondary_paths": [
+        "inject/src/main/java/io/micronaut/context/BeanContext.java"
+      ]
+    },
+    {
+      "case_id": "bean_provider_lookup",
+      "query": "how are bean provider lookups implemented",
+      "primary_paths": [
+        "inject/src/main/java/io/micronaut/inject/provider/BeanProviderDefinition.java"
+      ],
+      "primary_symbols": ["BeanProviderDefinition"],
+      "primary_line_ranges": [[35, 110]],
+      "primary_lines": [38, 82, 87, 97],
+      "secondary_paths": [
+        "inject/src/main/java/io/micronaut/inject/provider/JakartaProviderBeanDefinition.java",
+        "inject/src/main/java/io/micronaut/inject/provider/JavaxProviderBeanDefinition.java"
+      ]
+    },
+    {
+      "case_id": "default_bean_definitions_provider",
+      "query": "where is the default bean definitions provider implemented",
+      "primary_paths": [
+        "inject/src/main/java/io/micronaut/context/DefaultBeanDefinitionsProvider.java"
+      ],
+      "primary_symbols": ["DefaultBeanDefinitionsProvider"],
+      "primary_line_ranges": [[25, 50]],
+      "primary_lines": [31],
+      "secondary_paths": [
+        "inject/src/main/java/io/micronaut/context/BeanDefinitionsProvider.java"
+      ]
+    },
+    {
+      "case_id": "http_client_exchange",
+      "query": "where does the http client exchange happen",
+      "primary_paths": [
+        "http-client/src/main/java/io/micronaut/http/client/netty/DefaultHttpClient.java"
+      ],
+      "primary_symbols": ["DefaultHttpClient.exchange"],
+      "primary_line_ranges": [
+        [580, 620],
+        [880, 920],
+        [1490, 1530]
+      ],
+      "primary_lines": [600, 891, 897, 1510]
+    },
+    {
+      "case_id": "http_client_filter_resolution",
+      "query": "how are http client filters resolved",
+      "primary_paths": [
+        "http-client/src/main/java/io/micronaut/http/client/netty/DefaultHttpClient.java"
+      ],
+      "primary_symbols": ["resolveFilterEntries", "resolveFilters"],
+      "primary_line_ranges": [
+        [390, 420],
+        [1550, 1585]
+      ],
+      "primary_lines": [402, 1568],
+      "secondary_paths": [
+        "http-client/src/main/java/io/micronaut/http/client/netty/DefaultNettyHttpClientRegistry.java",
+        "http-client/src/main/java/io/micronaut/http/client/netty/DefaultHttpClientBuilder.java"
+      ]
+    },
+    {
+      "case_id": "route_building",
+      "query": "where are routes built in micronaut",
+      "primary_paths": [
+        "router/src/main/java/io/micronaut/web/router/DefaultRouteBuilder.java"
+      ],
+      "primary_symbols": ["DefaultRouteBuilder"],
+      "primary_line_ranges": [
+        [60, 90],
+        [400, 440]
+      ],
+      "primary_lines": [72, 417],
+      "secondary_paths": []
+    },
+    {
+      "case_id": "annotated_filter_route_building",
+      "query": "where are annotated filters turned into routes",
+      "primary_paths": [
+        "router/src/main/java/io/micronaut/web/router/AnnotatedFilterRouteBuilder.java"
+      ],
+      "primary_symbols": ["AnnotatedFilterRouteBuilder", "addFilter"],
+      "primary_line_ranges": [[35, 85]],
+      "primary_lines": [42, 77],
+      "secondary_paths": [
+        "router/src/main/java/io/micronaut/web/router/DefaultRouteBuilder.java"
+      ]
+    },
+    {
+      "case_id": "route_executor_selection",
+      "query": "where is route executor selection implemented",
+      "primary_paths": [
+        "router/src/main/java/io/micronaut/web/router/DefaultRouteBuilder.java"
+      ],
+      "primary_symbols": ["RouteExecutorSelector", "executorSelector.select"],
+      "primary_line_ranges": [
+        [760, 790],
+        [960, 990]
+      ],
+      "primary_lines": [779, 969, 973, 982]
+    },
+    {
+      "case_id": "symbol_default_bean_context_getbean",
+      "query": "DefaultBeanContext getBean",
+      "primary_paths": [
+        "inject/src/main/java/io/micronaut/context/DefaultBeanContext.java"
+      ],
+      "primary_symbols": ["DefaultBeanContext.getBean"],
+      "primary_line_ranges": [
+        [780, 830],
+        [1590, 1670]
+      ],
+      "primary_lines": [786, 798, 1602, 1622, 1638, 1657]
+    },
+    {
+      "case_id": "symbol_default_http_client_exchange",
+      "query": "DefaultHttpClient exchange",
+      "primary_paths": [
+        "http-client/src/main/java/io/micronaut/http/client/netty/DefaultHttpClient.java"
+      ],
+      "primary_symbols": ["DefaultHttpClient.exchange"],
+      "primary_line_ranges": [
+        [580, 620],
+        [880, 920],
+        [1490, 1530]
+      ],
+      "primary_lines": [600, 891, 897, 1510]
+    }
+  ]
+}

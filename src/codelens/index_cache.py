@@ -99,7 +99,7 @@ class IndexCache:
         self,
         paths: Iterable[str | Path],
         *,
-        source_set_lookup: Callable | None = None,
+        source_set_lookup: Callable[[str | Path], str | None] | None = None,
         context_token: str | None = None,
     ) -> SymbolIndex:
         path_list = tuple(paths)

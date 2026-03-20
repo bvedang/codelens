@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
+from typing import cast
 
 from codelens.chunker import parse_java
 from codelens.db.session import get_session
+from codelens.models.retrieval_document import RetrievalDocument
 from codelens.repository.retrieval_document_repo import upsert_documents
-from codelens.retrieval.documents import RetrievalDocument, build_retrieval_documents
+from codelens.retrieval.documents import build_retrieval_documents
 from codelens.type_resolver import TypeResolver
 from codelens.workspace_runtime import parse_java_file_with_workspace
+
+ChunkData = Mapping[str, object]
 
 
 class RetrievalIndexingService:
@@ -27,7 +32,9 @@ class RetrievalIndexingService:
         resolver: TypeResolver | None = None,
         source_set: str | None = None,
     ) -> list[RetrievalDocument]:
-        chunks = parse_java(code, filepath=filepath, resolver=resolver)
+        chunks = cast(
+            list[ChunkData], parse_java(code, filepath=filepath, resolver=resolver)
+        )
         return self.index_chunks(chunks, source_set=source_set)
 
     def index_java_file_with_workspace(

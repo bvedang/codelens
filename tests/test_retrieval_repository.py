@@ -1,3 +1,5 @@
+from typing import Any
+
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
@@ -27,8 +29,8 @@ def session():
 # --- Helper ---
 # The model has ~20 fields.  This factory fills in sensible defaults so each
 # test only specifies the fields it cares about, keeping assertions readable.
-def _make_document(**overrides) -> RetrievalDocument:
-    defaults = dict(
+def _make_document(**overrides: object) -> RetrievalDocument:
+    defaults: dict[str, Any] = dict(
         chunk_id="chunk-1",
         kind="method",
         name="placeOrder",
@@ -48,7 +50,7 @@ def _make_document(**overrides) -> RetrievalDocument:
         retrieval_text="method placeOrder PaymentGateway charge",
     )
     defaults.update(overrides)
-    return RetrievalDocument(**defaults)  # type: ignore[arg-type]
+    return RetrievalDocument(**defaults)  # pyright: ignore[reportArgumentType]
 
 
 # --- Tests ---

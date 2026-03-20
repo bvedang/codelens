@@ -41,6 +41,8 @@ class OrderService {
     )
     assert method_document.signature == "void placeOrder()"
     assert method_document.source_set == ":orders:main"
+    assert method_document.start_line == 8
+    assert method_document.end_line == 10
 
 
 def test_build_retrieval_document_for_skeleton_includes_inheritance():

@@ -57,6 +57,8 @@ class OrderService {
         "[method] com.app.OrderService.placeOrder\nvoid placeOrder(String orderId)"
     )
     assert method.source_set == ":app:main"
+    assert method.start_line == 6
+    assert method.end_line == 8
 
 
 def test_build_index_documents_filters_non_indexable_and_small_chunks(tmp_path):

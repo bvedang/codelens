@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from codelens.gradle_model import GradleWorkspaceModel, SourceSetId
 from codelens.index_cache import IndexCache, _file_signature
@@ -42,6 +43,10 @@ class WorkspaceSharedContext:
     workspace_cache_token: str | None
     source_index: SymbolIndex
     jdk_index: SymbolIndex | None
+
+
+WorkspaceParseContext = WorkspaceSourceSetContext | WorkspaceResolverContext
+ParsedChunk = dict[str, object]
 
 
 def build_workspace_shared_context(
@@ -198,14 +203,17 @@ def build_workspace_resolver_context(
 def parse_java_file_with_resolver_context(
     filepath: str | Path,
     *,
-    context: WorkspaceSourceSetContext,
-):
+    context: WorkspaceParseContext,
+) -> tuple[list[ParsedChunk], WorkspaceResolverContext]:
     from .chunker import parse_java
 
     file_path = Path(filepath).resolve()
     code = file_path.read_bytes()
     logger.info("Parsing Java file %s with workspace-aware resolver", file_path)
-    chunks = parse_java(code, filepath=str(file_path), resolver=context.resolver)
+    chunks = cast(
+        list[ParsedChunk],
+        parse_java(code, filepath=str(file_path), resolver=context.resolver),
+    )
     return chunks, WorkspaceResolverContext(
         workspace=context.workspace,
         filepath=str(file_path),
