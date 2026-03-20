@@ -4,7 +4,12 @@ from unittest.mock import Mock
 
 from codelens.chunker import dedup_rerank_results, parse_java
 from codelens.parser import JAVA_PARSER
-from codelens.type_resolver import ImportContext, TypeIndex, TypeResolution, TypeResolver
+from codelens.type_resolver import (
+    ImportContext,
+    TypeIndex,
+    TypeResolution,
+    TypeResolver,
+)
 
 _parser = JAVA_PARSER
 
@@ -242,7 +247,9 @@ def test_parse_java_accepts_mock_resolver():
                 resolved_name="test.mock.Gateway",
                 strategy="mock",
             )
-        return TypeResolution(source_name=type_name, resolved_name=None, strategy="unresolved")
+        return TypeResolution(
+            source_name=type_name, resolved_name=None, strategy="unresolved"
+        )
 
     resolver.resolve_type_reference.side_effect = resolve_type_reference
 
@@ -287,9 +294,16 @@ def test_modifiers_on_type_field_method():
     chunks = parse_java(code, filepath="Service.java")
 
     assert _get_chunk(chunks, "type", "Service")["modifiers"] == ["public", "abstract"]
-    assert _get_chunk(chunks, "field", "TIMEOUT")["modifiers"] == ["private", "static", "final"]
+    assert _get_chunk(chunks, "field", "TIMEOUT")["modifiers"] == [
+        "private",
+        "static",
+        "final",
+    ]
     assert _get_chunk(chunks, "field", "name")["modifiers"] == ["protected"]
-    assert _get_chunk(chunks, "method", "run")["modifiers"] == ["public", "synchronized"]
+    assert _get_chunk(chunks, "method", "run")["modifiers"] == [
+        "public",
+        "synchronized",
+    ]
 
 
 def test_constructor_modifiers():
@@ -391,14 +405,18 @@ def test_skeleton_includes_method_signature_modifiers():
 
 
 def test_interface_modifiers_on_skeleton():
-    chunks = parse_java(b"public interface Handler { void handle(); }", filepath="Handler.java")
+    chunks = parse_java(
+        b"public interface Handler { void handle(); }", filepath="Handler.java"
+    )
     skeleton = _get_chunk(chunks, "skeleton", "Handler")
     assert "public" in skeleton["text"]
     assert skeleton["modifiers"] == ["public"]
 
 
 def test_enum_modifiers_on_skeleton():
-    chunks = parse_java(b"public enum Status { ACTIVE, INACTIVE; }", filepath="Status.java")
+    chunks = parse_java(
+        b"public enum Status { ACTIVE, INACTIVE; }", filepath="Status.java"
+    )
     skeleton = _get_chunk(chunks, "skeleton", "Status")
     assert "public" in skeleton["text"]
     assert skeleton["modifiers"] == ["public"]

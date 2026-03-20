@@ -4,8 +4,8 @@ from zipfile import ZipFile
 
 from codelens.symbol_index import (
     build_binary_symbol_index,
-    build_jdk_symbol_index,
     build_jar_symbol_index,
+    build_jdk_symbol_index,
     build_source_symbol_index,
 )
 

@@ -89,10 +89,12 @@ def test_resolver_uses_java_lang_from_index():
 
 def test_resolver_returns_ambiguous_when_multiple_candidates_match():
     resolver = TypeResolver(
-        type_index=TypeIndex.from_qualified_names([
-            "java.awt.List",
-            "java.util.List",
-        ])
+        type_index=TypeIndex.from_qualified_names(
+            [
+                "java.awt.List",
+                "java.util.List",
+            ]
+        )
     )
     ctx = ImportContext.from_declarations(
         "package com.app.orders;",
@@ -108,10 +110,12 @@ def test_resolver_returns_ambiguous_when_multiple_candidates_match():
 
 def test_resolver_returns_ambiguous_for_jdk_vs_dependency_match():
     resolver = TypeResolver(
-        type_index=TypeIndex.from_qualified_names([
-            "java.lang.String",
-            "com.acme.String",
-        ])
+        type_index=TypeIndex.from_qualified_names(
+            [
+                "java.lang.String",
+                "com.acme.String",
+            ]
+        )
     )
     ctx = ImportContext.from_declarations(
         "package com.app.orders;",
@@ -127,10 +131,12 @@ def test_resolver_returns_ambiguous_for_jdk_vs_dependency_match():
 
 def test_resolver_returns_ambiguous_for_dependency_vs_dependency_match():
     resolver = TypeResolver(
-        type_index=TypeIndex.from_qualified_names([
-            "com.alpha.Client",
-            "com.beta.Client",
-        ])
+        type_index=TypeIndex.from_qualified_names(
+            [
+                "com.alpha.Client",
+                "com.beta.Client",
+            ]
+        )
     )
     ctx = ImportContext.from_declarations(
         "package com.app.orders;",
@@ -146,10 +152,12 @@ def test_resolver_returns_ambiguous_for_dependency_vs_dependency_match():
 
 def test_resolver_prefers_same_package_over_dependency_with_same_simple_name():
     resolver = TypeResolver(
-        type_index=TypeIndex.from_qualified_names([
-            "com.app.orders.Client",
-            "com.beta.Client",
-        ])
+        type_index=TypeIndex.from_qualified_names(
+            [
+                "com.app.orders.Client",
+                "com.beta.Client",
+            ]
+        )
     )
     ctx = ImportContext.from_declarations(
         "package com.app.orders;",

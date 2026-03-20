@@ -63,7 +63,4 @@ class TimingCollector:
         return duration_ms(self.seconds(name))
 
     def as_milliseconds(self) -> dict[str, int]:
-        return {
-            name: duration_ms(seconds)
-            for name, seconds in self.totals.items()
-        }
+        return {name: duration_ms(seconds) for name, seconds in self.totals.items()}

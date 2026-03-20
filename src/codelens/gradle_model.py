@@ -75,8 +75,12 @@ class GradleWorkspaceModel:
                     raw.get("external_binary_entries", raw.get("external_jars", []))
                 ),
                 output_dirs=tuple(raw.get("output_dirs", [])),
-                compile_classpath_entries=tuple(raw.get("compile_classpath_entries", [])),
-                runtime_classpath_entries=tuple(raw.get("runtime_classpath_entries", [])),
+                compile_classpath_entries=tuple(
+                    raw.get("compile_classpath_entries", [])
+                ),
+                runtime_classpath_entries=tuple(
+                    raw.get("runtime_classpath_entries", [])
+                ),
             )
         return cls(
             source_sets=source_sets,
@@ -104,7 +108,9 @@ class GradleWorkspaceModel:
             return None
         return max(matched, key=lambda item: item[0])[1]
 
-    def visible_source_sets(self, source_set_id: SourceSetId) -> tuple[SourceSetId, ...]:
+    def visible_source_sets(
+        self, source_set_id: SourceSetId
+    ) -> tuple[SourceSetId, ...]:
         root_key = source_set_id.key
         if root_key not in self.source_sets:
             return ()
@@ -129,7 +135,9 @@ class GradleWorkspaceModel:
         visit(root_key)
         return tuple(ordered)
 
-    def visible_external_binary_entries(self, source_set_id: SourceSetId) -> tuple[str, ...]:
+    def visible_external_binary_entries(
+        self, source_set_id: SourceSetId
+    ) -> tuple[str, ...]:
         binaries: set[str] = set()
         for visible_source_set in self.visible_source_sets(source_set_id):
             model = self.source_sets.get(visible_source_set.key)
@@ -138,7 +146,9 @@ class GradleWorkspaceModel:
             binaries.update(model.external_binary_entries)
         return tuple(sorted(binaries))
 
-    def visible_project_artifact_entries(self, source_set_id: SourceSetId) -> tuple[str, ...]:
+    def visible_project_artifact_entries(
+        self, source_set_id: SourceSetId
+    ) -> tuple[str, ...]:
         artifacts: set[str] = set()
         for visible_source_set in self.visible_source_sets(source_set_id):
             model = self.source_sets.get(visible_source_set.key)
@@ -149,7 +159,8 @@ class GradleWorkspaceModel:
 
     def visible_external_jars(self, source_set_id: SourceSetId) -> tuple[str, ...]:
         return tuple(
-            entry for entry in self.visible_external_binary_entries(source_set_id)
+            entry
+            for entry in self.visible_external_binary_entries(source_set_id)
             if entry.endswith(".jar")
         )
 
@@ -174,10 +185,13 @@ class GradleWorkspaceModel:
             return ()
         return self.visible_source_roots(source_set_id)
 
-    def visible_type_index_for_file(self, filepath: str | Path,
-                                    source_index: SymbolIndex,
-                                    binary_index: SymbolIndex | None = None,
-                                    jdk_index: SymbolIndex | None = None) -> TypeIndex:
+    def visible_type_index_for_file(
+        self,
+        filepath: str | Path,
+        source_index: SymbolIndex,
+        binary_index: SymbolIndex | None = None,
+        jdk_index: SymbolIndex | None = None,
+    ) -> TypeIndex:
         source_set_id = self.source_set_for_file(filepath)
         return self.visible_type_index(
             source_set_id,
@@ -197,15 +211,21 @@ class GradleWorkspaceModel:
         if source_set_id is None:
             return TypeIndex.empty()
 
-        visible_source_keys = [item.key for item in self.visible_source_sets(source_set_id)]
+        visible_source_keys = [
+            item.key for item in self.visible_source_sets(source_set_id)
+        ]
         qualified_names = set(
-            source_index.qualified_names(origin_kind="source", containers=visible_source_keys)
+            source_index.qualified_names(
+                origin_kind="source", containers=visible_source_keys
+            )
         )
 
         if binary_index is not None:
             visible_binaries = self.visible_external_binary_entries(source_set_id)
             qualified_names.update(
-                binary_index.qualified_names(origin_kind="binary", containers=visible_binaries)
+                binary_index.qualified_names(
+                    origin_kind="binary", containers=visible_binaries
+                )
             )
 
         if jdk_index is not None:
@@ -224,8 +244,9 @@ class GradleWorkspaceModel:
                 lookup[str(_normalize_path(output_dir))] = model.source_set_id
         return lookup
 
-    def _source_sets_from_classpath(self, model: SourceSetModel,
-                                    output_lookup: Mapping[str, SourceSetId]) -> tuple[SourceSetId, ...]:
+    def _source_sets_from_classpath(
+        self, model: SourceSetModel, output_lookup: Mapping[str, SourceSetId]
+    ) -> tuple[SourceSetId, ...]:
         inferred: list[SourceSetId] = []
         for entry in model.compile_classpath_entries + model.runtime_classpath_entries:
             source_set_id = output_lookup.get(str(_normalize_path(entry)))

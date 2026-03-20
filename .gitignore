@@ -23,5 +23,3 @@ java_repos
 *.db
 *.db-shm
 *.db-wal
-
-CLAUDE.md

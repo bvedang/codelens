@@ -29,6 +29,7 @@ from codelens.repository.index_chunk_repo import (
 
 logger = get_logger(__name__)
 
+
 class FaissIndexRepository:
     def __init__(self, repo_root: str | Path, *, faiss_module=None) -> None:
         self._repo_root = Path(repo_root).resolve()
@@ -47,14 +48,22 @@ class FaissIndexRepository:
         with get_session() as session:
             index_metadata = get_index_metadata(session, self._repo_key)
             if not index_metadata:
-                logger.warning("<faiss_repository / load>: unable to load index. Repo may not be indexed")
+                logger.warning(
+                    "<faiss_repository / load>: unable to load index. Repo may not be indexed"
+                )
                 return None
             chunks = get_index_chunks(session, self._repo_key)
             if not chunks:
-                logger.info("<faiss_repository / load>: No chunks found. Repo may not be indexed")
+                logger.info(
+                    "<faiss_repository / load>: No chunks found. Repo may not be indexed"
+                )
                 return None
 
-        index = self._read_index(self._vectors_path) if self._vectors_path.exists() else None
+        index = (
+            self._read_index(self._vectors_path)
+            if self._vectors_path.exists()
+            else None
+        )
 
         vector_size = int(getattr(index, "d", 0)) if index is not None else 0
         return LoadedIndex(
@@ -103,11 +112,14 @@ class FaissIndexRepository:
         self._shards_dir.mkdir(parents=True, exist_ok=True)
 
         with get_session() as session:
-            upsert_index_metadata(session, IndexMeta(
-                repo_root=self._repo_key,
-                model_name=model_name,
-                indexed_at=indexed_at,
-            ))
+            upsert_index_metadata(
+                session,
+                IndexMeta(
+                    repo_root=self._repo_key,
+                    model_name=model_name,
+                    indexed_at=indexed_at,
+                ),
+            )
 
         state = IndexBuildState(
             repo_root=self._repo_key,
@@ -141,14 +153,20 @@ class FaissIndexRepository:
 
         if entries:
             shard_name = f"{next_shard_id:08d}.faiss"
-            chunks, flat_vectors, vector_size = self._build_index_chunks(entries, vectors, shard=shard_name)
+            chunks, flat_vectors, vector_size = self._build_index_chunks(
+                entries, vectors, shard=shard_name
+            )
 
             self._shards_dir.mkdir(parents=True, exist_ok=True)
-            self._write_flat_index(flat_vectors, vector_size, self._shards_dir / shard_name)
+            self._write_flat_index(
+                flat_vectors, vector_size, self._shards_dir / shard_name
+            )
 
             with get_session() as session:
                 for chunk_id_prefix in self._chunk_id_prefixes(entries):
-                    delete_index_chunks_by_prefix(session, self._repo_key, chunk_id_prefix)
+                    delete_index_chunks_by_prefix(
+                        session, self._repo_key, chunk_id_prefix
+                    )
                 insert_index_chunks(session, chunks)
 
             next_shard_id += 1
@@ -160,12 +178,14 @@ class FaissIndexRepository:
         failed_files = dict(state.failed_files)
         failed_files.pop(workspace_file, None)
 
-        updated = state.model_copy(update={
-            "completed_files": completed_files,
-            "failed_files": failed_files,
-            "documents_indexed": documents_indexed,
-            "next_shard_id": next_shard_id,
-        })
+        updated = state.model_copy(
+            update={
+                "completed_files": completed_files,
+                "failed_files": failed_files,
+                "documents_indexed": documents_indexed,
+                "next_shard_id": next_shard_id,
+            }
+        )
         return self._write_state(updated)
 
     def mark_workspace_file_failed(
@@ -208,8 +228,13 @@ class FaissIndexRepository:
         with get_session() as session:
             delete_index_chunks_by_repo(session, self._repo_key)
             insert_index_chunks(session, chunks)
-            upsert_index_metadata(session,
-                IndexMeta(repo_root=self._repo_key, model_name=model_name, indexed_at=indexed_at)
+            upsert_index_metadata(
+                session,
+                IndexMeta(
+                    repo_root=self._repo_key,
+                    model_name=model_name,
+                    indexed_at=indexed_at,
+                ),
             )
 
     def entries_with_vectors(
@@ -224,7 +249,10 @@ class FaissIndexRepository:
         retained: list[tuple[dict[str, Any], list[list[float]]]] = []
         shard_cache: dict[str, Any] = {}
         for chunk in loaded.chunks.values():
-            if exclude_file_path and chunk.payload.get("file_path") == exclude_file_path:
+            if (
+                exclude_file_path
+                and chunk.payload.get("file_path") == exclude_file_path
+            ):
                 continue
             retained.append(
                 (
@@ -251,7 +279,9 @@ class FaissIndexRepository:
             return []
         if shard is None:
             if loaded.index is None:
-                raise MetadataCorruptionError("cannot reconstruct vectors without a FAISS index")
+                raise MetadataCorruptionError(
+                    "cannot reconstruct vectors without a FAISS index"
+                )
             index = cast(Any, loaded.index)
         else:
             if shard not in shard_cache:
@@ -288,7 +318,6 @@ class FaissIndexRepository:
         with get_session() as session:
             return upsert_index_build_status(session, state)
 
-
     def _reset_index_dir(self) -> None:
         self._index_dir.mkdir(parents=True, exist_ok=True)
         if self._vectors_path.exists():
@@ -298,11 +327,9 @@ class FaissIndexRepository:
             delete_index_chunks_by_repo(session, self._repo_key)
             delete_index_metadata(session, self._repo_key)
 
-
     def _clear_shards(self) -> None:
         if self._shards_dir.exists():
             shutil.rmtree(self._shards_dir)
-
 
     def _build_index_chunks(
         self,
@@ -330,13 +357,15 @@ class FaissIndexRepository:
                 flat_vectors.append([float(value) for value in row])
                 faiss_ids.append(next_id)
                 next_id += 1
-            chunks.append(IndexChunk(
-                chunk_id=chunk_id,
-                repo_root=self._repo_key,
-                faiss_ids=faiss_ids,
-                payload=dict(entry),
-                shard=shard,
-            ))
+            chunks.append(
+                IndexChunk(
+                    chunk_id=chunk_id,
+                    repo_root=self._repo_key,
+                    faiss_ids=faiss_ids,
+                    payload=dict(entry),
+                    shard=shard,
+                )
+            )
         return chunks, flat_vectors, vector_size
 
     def _faiss(self):
@@ -348,11 +377,6 @@ class FaissIndexRepository:
 
     def _chunk_id_prefixes(self, entries: Sequence[Mapping[str, Any]]) -> set[str]:
         file_paths = {
-            str(entry["file_path"])
-            for entry in entries
-            if entry.get("file_path")
+            str(entry["file_path"]) for entry in entries if entry.get("file_path")
         }
-        return {
-            f"{self._repo_hash}:{file_path}:"
-            for file_path in file_paths
-        }
+        return {f"{self._repo_hash}:{file_path}:" for file_path in file_paths}

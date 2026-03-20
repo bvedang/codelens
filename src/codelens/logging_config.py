@@ -42,9 +42,7 @@ def log_event(
 
     if fields:
         field_text = " ".join(
-            f"{key}={value}"
-            for key, value in fields.items()
-            if value is not None
+            f"{key}={value}" for key, value in fields.items() if value is not None
         )
         if field_text:
             logger.log(level, "%s | %s", message, field_text)

@@ -5,6 +5,7 @@ from typing import Any
 class MetadataCorruptionError(RuntimeError):
     pass
 
+
 @dataclass(frozen=True)
 class StoredChunk:
     chunk_id: str
@@ -27,5 +28,3 @@ class IndexStatus:
     chunk_count: int
     indexed_at: str | None
     model_name: str | None
-
-

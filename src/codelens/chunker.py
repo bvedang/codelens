@@ -24,6 +24,7 @@ from codelens.constants import (
     TYPE_NODES,
 )
 from codelens.extractors import (
+    _resolve_type_name,
     annotation_texts,
     callable_type_map,
     extract_annotations_full,
@@ -33,7 +34,6 @@ from codelens.extractors import (
     extract_preceding_comment,
     extract_record_components,
     extract_throws,
-    _resolve_type_name,
 )
 from codelens.logging_config import get_logger
 from codelens.parser import JAVA_PARSER
@@ -43,9 +43,14 @@ parser = JAVA_PARSER
 logger = get_logger(__name__)
 
 
-def method_metadata(code: bytes, node, class_fields: list[str],
-                    field_type_map: dict, file_ctx: dict,
-                    resolver: TypeResolver) -> dict:
+def method_metadata(
+    code: bytes,
+    node,
+    class_fields: list[str],
+    field_type_map: dict,
+    file_ctx: dict,
+    resolver: TypeResolver,
+) -> dict:
     meta = {}
     ret = node.child_by_field_name("type")
     if ret:
@@ -78,8 +83,7 @@ def method_metadata(code: bytes, node, class_fields: list[str],
     return meta
 
 
-def type_metadata(code: bytes, node, file_ctx: dict,
-                  resolver: TypeResolver) -> dict:
+def type_metadata(code: bytes, node, file_ctx: dict, resolver: TypeResolver) -> dict:
     meta = {}
     superclass = node.child_by_field_name("superclass")
     if superclass:
@@ -111,8 +115,12 @@ def type_metadata(code: bytes, node, file_ctx: dict,
     return meta
 
 
-def build_context_header(owner_chain: list[str], file_ctx: dict,
-                         class_fields: list[str], filepath: str | None = None) -> str:
+def build_context_header(
+    owner_chain: list[str],
+    file_ctx: dict,
+    class_fields: list[str],
+    filepath: str | None = None,
+) -> str:
     parts = []
     if filepath:
         parts.append(f"// file: {filepath}")
@@ -127,9 +135,14 @@ def build_context_header(owner_chain: list[str], file_ctx: dict,
     return ""
 
 
-def build_skeleton(code: bytes, node, owner_chain: list[str], file_ctx: dict,
-                   filepath: str | None = None,
-                   resolver: TypeResolver | None = None) -> dict:
+def build_skeleton(
+    code: bytes,
+    node,
+    owner_chain: list[str],
+    file_ctx: dict,
+    filepath: str | None = None,
+    resolver: TypeResolver | None = None,
+) -> dict:
     name = node_name(code, node)
     body = node.child_by_field_name("body")
 
@@ -146,7 +159,8 @@ def build_skeleton(code: bytes, node, owner_chain: list[str], file_ctx: dict,
             if child.type in {"field_declaration", "constant_declaration"}:
                 fields.append(text(code, child).strip())
             elif child.type in {
-                "method_declaration", "constructor_declaration",
+                "method_declaration",
+                "constructor_declaration",
                 "compact_constructor_declaration",
             }:
                 sig_parts = []
@@ -160,8 +174,16 @@ def build_skeleton(code: bytes, node, owner_chain: list[str], file_ctx: dict,
                 )
 
     skeleton_text = _assemble_skeleton_text(
-        code, node, name, fields, method_sigs, enum_constants,
-        record_components, owner_chain, file_ctx, resolver,
+        code,
+        node,
+        name,
+        fields,
+        method_sigs,
+        enum_constants,
+        record_components,
+        owner_chain,
+        file_ctx,
+        resolver,
     )
 
     ctx_header = build_context_header(owner_chain, file_ctx, [], filepath)
@@ -182,9 +204,18 @@ def build_skeleton(code: bytes, node, owner_chain: list[str], file_ctx: dict,
     }
 
 
-def _assemble_skeleton_text(code, node, name, fields, method_sigs,
-                            enum_constants, record_components, owner_chain,
-                            file_ctx=None, resolver=None):
+def _assemble_skeleton_text(
+    code,
+    node,
+    name,
+    fields,
+    method_sigs,
+    enum_constants,
+    record_components,
+    owner_chain,
+    file_ctx=None,
+    resolver=None,
+):
     lines = []
     annotations = extract_annotations_full(code, node, file_ctx, resolver)
     for annotation in annotations:
@@ -200,7 +231,10 @@ def _assemble_skeleton_text(code, node, name, fields, method_sigs,
         decl_parts.append(text(code, tp))
 
     if record_components:
-        comp_str = ", ".join(f"{component['type']} {component['name']}" for component in record_components)
+        comp_str = ", ".join(
+            f"{component['type']} {component['name']}"
+            for component in record_components
+        )
         decl_parts.append(f"({comp_str})")
 
     superclass = node.child_by_field_name("superclass")
@@ -244,20 +278,32 @@ def file_context(code: bytes, root) -> dict:
     return ctx
 
 
-def scan_behavior(code: bytes, node, owner_chain: list[str], chunks: list,
-                  file_ctx: dict, class_fields: list[str],
-                  field_type_map: dict, filepath: str | None,
-                  resolver: TypeResolver,
-                  enclosing_type: dict | None):
+def scan_behavior(
+    code: bytes,
+    node,
+    owner_chain: list[str],
+    chunks: list,
+    file_ctx: dict,
+    class_fields: list[str],
+    field_type_map: dict,
+    filepath: str | None,
+    resolver: TypeResolver,
+    enclosing_type: dict | None,
+):
 
     if node.is_error or node.is_missing:
-        chunks.append(finalize_chunk({
-            "kind": "parse_error",
-            "owner_chain": owner_chain[:],
-            "filepath": filepath,
-            "span": [node.start_byte, node.end_byte],
-            "text": text(code, node),
-        }, enclosing_type))
+        chunks.append(
+            finalize_chunk(
+                {
+                    "kind": "parse_error",
+                    "owner_chain": owner_chain[:],
+                    "filepath": filepath,
+                    "span": [node.start_byte, node.end_byte],
+                    "text": text(code, node),
+                },
+                enclosing_type,
+            )
+        )
 
     if node.type == "object_creation_expression":
         anon_body = node.child_by_field_name("body")
@@ -269,68 +315,121 @@ def scan_behavior(code: bytes, node, owner_chain: list[str], chunks: list,
             ctx_header = build_context_header(
                 owner_chain + [anon_name], file_ctx, class_fields, filepath
             )
-            chunks.append(finalize_chunk({
-                "kind": "behavior",
-                "name": anon_name,
-                "owner_chain": owner_chain[:],
-                "filepath": filepath,
-                "span": [node.start_byte, node.end_byte],
-                "text": text(code, node),
-                "embed_text": ctx_header + text(code, node),
-                "node_type": node.type,
-            }, enclosing_type))
+            chunks.append(
+                finalize_chunk(
+                    {
+                        "kind": "behavior",
+                        "name": anon_name,
+                        "owner_chain": owner_chain[:],
+                        "filepath": filepath,
+                        "span": [node.start_byte, node.end_byte],
+                        "text": text(code, node),
+                        "embed_text": ctx_header + text(code, node),
+                        "node_type": node.type,
+                    },
+                    enclosing_type,
+                )
+            )
             for child in anon_body.named_children:
-                walk(code, child, owner_chain + [anon_name], chunks,
-                     class_fields, field_type_map, file_ctx, filepath,
-                     resolver, enclosing_type)
+                walk(
+                    code,
+                    child,
+                    owner_chain + [anon_name],
+                    chunks,
+                    class_fields,
+                    field_type_map,
+                    file_ctx,
+                    filepath,
+                    resolver,
+                    enclosing_type,
+                )
             return
 
     if node.type in BEHAVIOR_NODES:
         ctx_header = build_context_header(owner_chain, file_ctx, class_fields, filepath)
-        chunks.append(finalize_chunk({
-            "kind": "behavior",
-            "name": node_name(code, node),
-            "owner_chain": owner_chain[:],
-            "filepath": filepath,
-            "span": [node.start_byte, node.end_byte],
-            "text": text(code, node),
-            "embed_text": ctx_header + text(code, node),
-            "node_type": node.type,
-        }, enclosing_type))
+        chunks.append(
+            finalize_chunk(
+                {
+                    "kind": "behavior",
+                    "name": node_name(code, node),
+                    "owner_chain": owner_chain[:],
+                    "filepath": filepath,
+                    "span": [node.start_byte, node.end_byte],
+                    "text": text(code, node),
+                    "embed_text": ctx_header + text(code, node),
+                    "node_type": node.type,
+                },
+                enclosing_type,
+            )
+        )
 
     if node.type in TYPE_NODES:
-        walk(code, node, owner_chain, chunks, [], {}, file_ctx, filepath,
-             resolver, enclosing_type)
+        walk(
+            code,
+            node,
+            owner_chain,
+            chunks,
+            [],
+            {},
+            file_ctx,
+            filepath,
+            resolver,
+            enclosing_type,
+        )
         return
 
     for child in node.named_children:
         if should_skip_behavior_child(node, child):
             continue
-        scan_behavior(code, child, owner_chain, chunks, file_ctx,
-                      class_fields, field_type_map, filepath, resolver,
-                      enclosing_type)
+        scan_behavior(
+            code,
+            child,
+            owner_chain,
+            chunks,
+            file_ctx,
+            class_fields,
+            field_type_map,
+            filepath,
+            resolver,
+            enclosing_type,
+        )
 
 
 def should_skip_behavior_child(parent, child) -> bool:
     if parent.type != "throw_statement" or child.type != "object_creation_expression":
         return False
-    return child.child_by_field_name("body") is None and first_named(child, "class_body") is None
+    return (
+        child.child_by_field_name("body") is None
+        and first_named(child, "class_body") is None
+    )
 
 
-def walk(code: bytes, node, owner_chain: list[str], chunks: list,
-         class_fields: list[str], field_type_map: dict,
-         file_ctx: dict, filepath: str | None,
-         resolver: TypeResolver,
-         enclosing_type: dict | None = None):
+def walk(
+    code: bytes,
+    node,
+    owner_chain: list[str],
+    chunks: list,
+    class_fields: list[str],
+    field_type_map: dict,
+    file_ctx: dict,
+    filepath: str | None,
+    resolver: TypeResolver,
+    enclosing_type: dict | None = None,
+):
 
     if node.is_error or node.is_missing:
-        chunks.append(finalize_chunk({
-            "kind": "parse_error",
-            "owner_chain": owner_chain[:],
-            "filepath": filepath,
-            "span": [node.start_byte, node.end_byte],
-            "text": text(code, node),
-        }, enclosing_type))
+        chunks.append(
+            finalize_chunk(
+                {
+                    "kind": "parse_error",
+                    "owner_chain": owner_chain[:],
+                    "filepath": filepath,
+                    "span": [node.start_byte, node.end_byte],
+                    "text": text(code, node),
+                },
+                enclosing_type,
+            )
+        )
 
     if node.type in TYPE_NODES:
         t_meta = type_metadata(code, node, file_ctx, resolver)
@@ -343,18 +442,23 @@ def walk(code: bytes, node, owner_chain: list[str], chunks: list,
             full_text = text(code, node)
             if leading_comment:
                 full_text = leading_comment + "\n" + full_text
-            chunks.append(finalize_chunk({
-                "kind": "type",
-                "name": node_name(code, node),
-                "owner_chain": owner_chain[:],
-                "filepath": filepath,
-                "span": [node.start_byte, node.end_byte],
-                "text": full_text,
-                "embed_text": ctx_header + full_text,
-                "type_kind": node.type,
-                **comment_meta,
-                **t_meta,
-            }, enclosing_type))
+            chunks.append(
+                finalize_chunk(
+                    {
+                        "kind": "type",
+                        "name": node_name(code, node),
+                        "owner_chain": owner_chain[:],
+                        "filepath": filepath,
+                        "span": [node.start_byte, node.end_byte],
+                        "text": full_text,
+                        "embed_text": ctx_header + full_text,
+                        "type_kind": node.type,
+                        **comment_meta,
+                        **t_meta,
+                    },
+                    enclosing_type,
+                )
+            )
 
         skeleton = build_skeleton(code, node, owner_chain, file_ctx, filepath, resolver)
         skeleton.update(comment_meta)
@@ -387,56 +491,79 @@ def walk(code: bytes, node, owner_chain: list[str], chunks: list,
             for comp in extract_record_components(code, node):
                 current_fields.append(comp["name"])
                 current_field_type_map[comp["name"]] = (
-                    _resolve_type_name(comp["type"], file_ctx, resolver)
-                    or comp["type"]
+                    _resolve_type_name(comp["type"], file_ctx, resolver) or comp["type"]
                 )
                 ctx_header = build_context_header(
                     next_owner, file_ctx, current_fields, filepath
                 )
-                chunks.append(finalize_chunk({
-                    "kind": "record_component",
-                    "name": comp["name"],
-                    "owner_chain": next_owner[:],
-                    "filepath": filepath,
-                    "span": [node.start_byte, node.end_byte],
-                    "text": f"{comp['type']} {comp['name']}",
-                    "embed_text": ctx_header + f"{comp['type']} {comp['name']}",
-                    "component_type": comp["type"],
-                }, current_type))
+                chunks.append(
+                    finalize_chunk(
+                        {
+                            "kind": "record_component",
+                            "name": comp["name"],
+                            "owner_chain": next_owner[:],
+                            "filepath": filepath,
+                            "span": [node.start_byte, node.end_byte],
+                            "text": f"{comp['type']} {comp['name']}",
+                            "embed_text": ctx_header + f"{comp['type']} {comp['name']}",
+                            "component_type": comp["type"],
+                        },
+                        current_type,
+                    )
+                )
 
         if body:
             for child in body.named_children:
-                walk(code, child, next_owner, chunks, current_fields,
-                     current_field_type_map, file_ctx, filepath, resolver,
-                     current_type)
+                walk(
+                    code,
+                    child,
+                    next_owner,
+                    chunks,
+                    current_fields,
+                    current_field_type_map,
+                    file_ctx,
+                    filepath,
+                    resolver,
+                    current_type,
+                )
         return
 
     if node.type == "static_initializer":
         ctx_header = build_context_header(owner_chain, file_ctx, class_fields, filepath)
-        chunks.append(finalize_chunk({
-            "kind": "static_initializer",
-            "name": "<static_init>",
-            "owner_chain": owner_chain[:],
-            "filepath": filepath,
-            "span": [node.start_byte, node.end_byte],
-            "text": text(code, node),
-            "embed_text": ctx_header + text(code, node),
-            "calls": extract_calls(node, field_type_map, file_ctx, resolver),
-        }, enclosing_type))
+        chunks.append(
+            finalize_chunk(
+                {
+                    "kind": "static_initializer",
+                    "name": "<static_init>",
+                    "owner_chain": owner_chain[:],
+                    "filepath": filepath,
+                    "span": [node.start_byte, node.end_byte],
+                    "text": text(code, node),
+                    "embed_text": ctx_header + text(code, node),
+                    "calls": extract_calls(node, field_type_map, file_ctx, resolver),
+                },
+                enclosing_type,
+            )
+        )
         return
 
     if node.type == "block" and node.parent and node.parent.type == "class_body":
         ctx_header = build_context_header(owner_chain, file_ctx, class_fields, filepath)
-        chunks.append(finalize_chunk({
-            "kind": "instance_initializer",
-            "name": "<instance_init>",
-            "owner_chain": owner_chain[:],
-            "filepath": filepath,
-            "span": [node.start_byte, node.end_byte],
-            "text": text(code, node),
-            "embed_text": ctx_header + text(code, node),
-            "calls": extract_calls(node, field_type_map, file_ctx, resolver),
-        }, enclosing_type))
+        chunks.append(
+            finalize_chunk(
+                {
+                    "kind": "instance_initializer",
+                    "name": "<instance_init>",
+                    "owner_chain": owner_chain[:],
+                    "filepath": filepath,
+                    "span": [node.start_byte, node.end_byte],
+                    "text": text(code, node),
+                    "embed_text": ctx_header + text(code, node),
+                    "calls": extract_calls(node, field_type_map, file_ctx, resolver),
+                },
+                enclosing_type,
+            )
+        )
         return
 
     if node.type in MEMBER_NODES:
@@ -457,86 +584,129 @@ def walk(code: bytes, node, owner_chain: list[str], chunks: list,
         if node.type in {"field_declaration", "constant_declaration"}:
             for declared_name in declarator_names(code, node):
                 raw = text(code, node)
-                embed = ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
-                chunks.append(finalize_chunk({
-                    "kind": kind_map[node.type],
-                    "name": declared_name,
-                    "owner_chain": owner_chain[:],
-                    "filepath": filepath,
-                    "span": [node.start_byte, node.end_byte],
-                    "text": raw,
-                    "embed_text": embed,
-                    "node_type": node.type,
-                    "field_type": field_type_str(code, node),
-                    "annotations": extract_annotations_full(code, node, file_ctx, resolver),
-                    "modifiers": extract_modifiers(code, node),
-                    **comment_meta,
-                }, enclosing_type))
+                embed = (
+                    ctx_header
+                    + (leading_comment + "\n" if leading_comment else "")
+                    + raw
+                )
+                chunks.append(
+                    finalize_chunk(
+                        {
+                            "kind": kind_map[node.type],
+                            "name": declared_name,
+                            "owner_chain": owner_chain[:],
+                            "filepath": filepath,
+                            "span": [node.start_byte, node.end_byte],
+                            "text": raw,
+                            "embed_text": embed,
+                            "node_type": node.type,
+                            "field_type": field_type_str(code, node),
+                            "annotations": extract_annotations_full(
+                                code, node, file_ctx, resolver
+                            ),
+                            "modifiers": extract_modifiers(code, node),
+                            **comment_meta,
+                        },
+                        enclosing_type,
+                    )
+                )
 
         elif node.type in {
-            "method_declaration", "constructor_declaration",
+            "method_declaration",
+            "constructor_declaration",
             "compact_constructor_declaration",
         }:
             meta = method_metadata(
                 code, node, class_fields, field_type_map, file_ctx, resolver
             )
             raw = text(code, node)
-            embed = ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
+            embed = (
+                ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
+            )
 
-            chunks.append(finalize_chunk({
-                "kind": kind_map[node.type],
-                "name": node_name(code, node),
-                "owner_chain": owner_chain[:],
-                "filepath": filepath,
-                "span": [node.start_byte, node.end_byte],
-                "text": raw,
-                "embed_text": embed,
-                "node_type": node.type,
-                **comment_meta,
-                **meta,
-            }, enclosing_type))
+            chunks.append(
+                finalize_chunk(
+                    {
+                        "kind": kind_map[node.type],
+                        "name": node_name(code, node),
+                        "owner_chain": owner_chain[:],
+                        "filepath": filepath,
+                        "span": [node.start_byte, node.end_byte],
+                        "text": raw,
+                        "embed_text": embed,
+                        "node_type": node.type,
+                        **comment_meta,
+                        **meta,
+                    },
+                    enclosing_type,
+                )
+            )
 
         elif node.type == "enum_constant":
             raw = text(code, node)
-            embed = ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
-            chunks.append(finalize_chunk({
-                "kind": "enum_constant",
-                "name": node_name(code, node),
-                "owner_chain": owner_chain[:],
-                "filepath": filepath,
-                "span": [node.start_byte, node.end_byte],
-                "text": raw,
-                "embed_text": embed,
-                "node_type": node.type,
-                **comment_meta,
-            }, enclosing_type))
+            embed = (
+                ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
+            )
+            chunks.append(
+                finalize_chunk(
+                    {
+                        "kind": "enum_constant",
+                        "name": node_name(code, node),
+                        "owner_chain": owner_chain[:],
+                        "filepath": filepath,
+                        "span": [node.start_byte, node.end_byte],
+                        "text": raw,
+                        "embed_text": embed,
+                        "node_type": node.type,
+                        **comment_meta,
+                    },
+                    enclosing_type,
+                )
+            )
             body = node.child_by_field_name("body")
             if body is None:
                 body = first_named(node, "class_body")
             if body:
                 const_name = node_name(code, node) or "<constant>"
                 for child in body.named_children:
-                    walk(code, child, owner_chain + [const_name], chunks,
-                         class_fields, field_type_map, file_ctx, filepath,
-                         resolver, enclosing_type)
+                    walk(
+                        code,
+                        child,
+                        owner_chain + [const_name],
+                        chunks,
+                        class_fields,
+                        field_type_map,
+                        file_ctx,
+                        filepath,
+                        resolver,
+                        enclosing_type,
+                    )
 
         else:
             raw = text(code, node)
-            embed = ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
-            chunks.append(finalize_chunk({
-                "kind": kind_map.get(node.type, "member"),
-                "name": node_name(code, node),
-                "owner_chain": owner_chain[:],
-                "filepath": filepath,
-                "span": [node.start_byte, node.end_byte],
-                "text": raw,
-                "embed_text": embed,
-                "node_type": node.type,
-                **comment_meta,
-            }, enclosing_type))
+            embed = (
+                ctx_header + (leading_comment + "\n" if leading_comment else "") + raw
+            )
+            chunks.append(
+                finalize_chunk(
+                    {
+                        "kind": kind_map.get(node.type, "member"),
+                        "name": node_name(code, node),
+                        "owner_chain": owner_chain[:],
+                        "filepath": filepath,
+                        "span": [node.start_byte, node.end_byte],
+                        "text": raw,
+                        "embed_text": embed,
+                        "node_type": node.type,
+                        **comment_meta,
+                    },
+                    enclosing_type,
+                )
+            )
 
         if node.type in {
-            "method_declaration", "constructor_declaration",
+            "method_declaration",
+            "constructor_declaration",
             "compact_constructor_declaration",
         }:
             body = node.child_by_field_name("body")
@@ -544,18 +714,38 @@ def walk(code: bytes, node, owner_chain: list[str], chunks: list,
                 body = first_named(node, "block", "constructor_body")
             if body:
                 callable_name = node_name(code, node) or "<anonymous>"
-                scan_behavior(code, body, owner_chain + [callable_name], chunks,
-                              file_ctx, class_fields, field_type_map, filepath,
-                              resolver, enclosing_type)
+                scan_behavior(
+                    code,
+                    body,
+                    owner_chain + [callable_name],
+                    chunks,
+                    file_ctx,
+                    class_fields,
+                    field_type_map,
+                    filepath,
+                    resolver,
+                    enclosing_type,
+                )
         return
 
     for child in node.named_children:
-        walk(code, child, owner_chain, chunks, class_fields,
-             field_type_map, file_ctx, filepath, resolver, enclosing_type)
+        walk(
+            code,
+            child,
+            owner_chain,
+            chunks,
+            class_fields,
+            field_type_map,
+            file_ctx,
+            filepath,
+            resolver,
+            enclosing_type,
+        )
 
 
-def parse_java(code: bytes, filepath: str | None = None,
-               resolver: TypeResolver | None = None) -> list[dict]:
+def parse_java(
+    code: bytes, filepath: str | None = None, resolver: TypeResolver | None = None
+) -> list[dict]:
     """Parse Java source and return all chunks with full metadata."""
     tree = parser.parse(code)
     root = tree.root_node
@@ -578,18 +768,24 @@ def parse_java(code: bytes, filepath: str | None = None,
             f"{package_name}.{type_name}" if package_name else type_name
         )
 
-    chunks = [finalize_chunk({
-        "kind": "file",
-        "filepath": filepath,
-        "span": [root.start_byte, root.end_byte],
-        "package": file_ctx.get("package"),
-        "imports": file_ctx.get("imports", []),
-        "module": file_ctx.get("module"),
-    })]
+    chunks = [
+        finalize_chunk(
+            {
+                "kind": "file",
+                "filepath": filepath,
+                "span": [root.start_byte, root.end_byte],
+                "package": file_ctx.get("package"),
+                "imports": file_ctx.get("imports", []),
+                "module": file_ctx.get("module"),
+            }
+        )
+    ]
 
     for child in root.named_children:
         if child.type not in {
-            "package_declaration", "import_declaration", "module_declaration",
+            "package_declaration",
+            "import_declaration",
+            "module_declaration",
         }:
             walk(code, child, [], chunks, [], {}, file_ctx, filepath, resolver)
 

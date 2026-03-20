@@ -38,9 +38,14 @@ def field_type_str(code: bytes, node) -> str | None:
     """Extract the type string from a field_declaration or constant_declaration."""
     for child in node.named_children:
         if child.type in (
-            "type_identifier", "scoped_type_identifier",
-            "generic_type", "array_type", "integral_type",
-            "floating_point_type", "boolean_type", "void_type",
+            "type_identifier",
+            "scoped_type_identifier",
+            "generic_type",
+            "array_type",
+            "integral_type",
+            "floating_point_type",
+            "boolean_type",
+            "void_type",
         ):
             return text(code, child)
     return None
@@ -58,8 +63,13 @@ def declared_type_str(code: bytes, node) -> str | None:
     return field_type_str(code, node)
 
 
-def chunk_id(filepath: str | None, kind: str, owner_chain: list[str],
-             name: str | None, span: list[int]) -> str:
+def chunk_id(
+    filepath: str | None,
+    kind: str,
+    owner_chain: list[str],
+    name: str | None,
+    span: list[int],
+) -> str:
     location = filepath or "<memory>"
     owner = ".".join(owner_chain) if owner_chain else "-"
     label = name or "-"

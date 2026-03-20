@@ -17,31 +17,33 @@ from codelens.type_resolver import TypeResolver
 
 def _workspace(tmp_path):
     base = tmp_path.resolve()
-    return GradleWorkspaceModel.from_dict({
-        "source_sets": {
-            ":orders:main": {
-                "source_roots": [str(base / "orders" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [":payments:main"],
-                "external_jars": [str(base / "libs" / "jackson.jar")],
-                "external_binary_entries": [str(base / "libs" / "jackson.jar")],
-            },
-            ":payments:main": {
-                "source_roots": [str(base / "payments" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-            ":internal:main": {
-                "source_roots": [str(base / "internal" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
+    return GradleWorkspaceModel.from_dict(
+        {
+            "source_sets": {
+                ":orders:main": {
+                    "source_roots": [str(base / "orders" / "src" / "main" / "java")],
+                    "generated_source_roots": [],
+                    "project_dependencies": [":payments:main"],
+                    "external_jars": [str(base / "libs" / "jackson.jar")],
+                    "external_binary_entries": [str(base / "libs" / "jackson.jar")],
+                },
+                ":payments:main": {
+                    "source_roots": [str(base / "payments" / "src" / "main" / "java")],
+                    "generated_source_roots": [],
+                    "project_dependencies": [],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+                ":internal:main": {
+                    "source_roots": [str(base / "internal" / "src" / "main" / "java")],
+                    "generated_source_roots": [],
+                    "project_dependencies": [],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+            }
         }
-    })
+    )
 
 
 def _get_method(chunks, name):
@@ -67,9 +69,15 @@ def _resolver_for_file(workspace, file_path, roots, binary_paths=None):
 
 
 def test_gradle_scoped_resolution_uses_visible_project_and_jar_deps(tmp_path):
-    orders_src = tmp_path / "orders" / "src" / "main" / "java" / "com" / "app" / "orders"
-    payments_src = tmp_path / "payments" / "src" / "main" / "java" / "com" / "app" / "payments"
-    internal_src = tmp_path / "internal" / "src" / "main" / "java" / "com" / "app" / "internal"
+    orders_src = (
+        tmp_path / "orders" / "src" / "main" / "java" / "com" / "app" / "orders"
+    )
+    payments_src = (
+        tmp_path / "payments" / "src" / "main" / "java" / "com" / "app" / "payments"
+    )
+    internal_src = (
+        tmp_path / "internal" / "src" / "main" / "java" / "com" / "app" / "internal"
+    )
     libs_dir = tmp_path / "libs"
     orders_src.mkdir(parents=True)
     payments_src.mkdir(parents=True)
@@ -121,17 +129,26 @@ class OrderService {
         )
     )
 
-    chunks = parse_java(order_service.read_bytes(), filepath=str(order_service), resolver=resolver)
+    chunks = parse_java(
+        order_service.read_bytes(), filepath=str(order_service), resolver=resolver
+    )
 
     method = _get_method(chunks, "placeOrder")
     assert "com.app.payments.PaymentGateway.charge" in method["calls"]
-    assert "com.fasterxml.jackson.databind.ObjectMapper.writeValueAsString" in method["calls"]
+    assert (
+        "com.fasterxml.jackson.databind.ObjectMapper.writeValueAsString"
+        in method["calls"]
+    )
     assert "com.app.internal.SecretThing" not in " ".join(method["calls"])
 
 
 def test_gradle_scoped_resolution_does_not_expose_invisible_project_types(tmp_path):
-    orders_src = tmp_path / "orders" / "src" / "main" / "java" / "com" / "app" / "orders"
-    internal_src = tmp_path / "internal" / "src" / "main" / "java" / "com" / "app" / "internal"
+    orders_src = (
+        tmp_path / "orders" / "src" / "main" / "java" / "com" / "app" / "orders"
+    )
+    internal_src = (
+        tmp_path / "internal" / "src" / "main" / "java" / "com" / "app" / "internal"
+    )
     orders_src.mkdir(parents=True)
     internal_src.mkdir(parents=True)
 
@@ -166,14 +183,18 @@ class OrderService {
         )
     )
 
-    chunks = parse_java(order_service.read_bytes(), filepath=str(order_service), resolver=resolver)
+    chunks = parse_java(
+        order_service.read_bytes(), filepath=str(order_service), resolver=resolver
+    )
 
     method = _get_method(chunks, "leak")
     assert "SecretThing.toString" in method["calls"]
 
 
 def test_workspace_resolution_supports_same_package_types_without_imports(tmp_path):
-    orders_src = tmp_path / "orders" / "src" / "main" / "java" / "com" / "app" / "orders"
+    orders_src = (
+        tmp_path / "orders" / "src" / "main" / "java" / "com" / "app" / "orders"
+    )
     orders_src.mkdir(parents=True)
 
     service_file = orders_src / "OrderService.java"
@@ -194,26 +215,34 @@ class OrderService {
         encoding="utf-8",
     )
 
-    workspace = GradleWorkspaceModel.from_dict({
-        "source_sets": {
-            ":orders:main": {
-                "source_roots": [str(tmp_path / "orders" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
+    workspace = GradleWorkspaceModel.from_dict(
+        {
+            "source_sets": {
+                ":orders:main": {
+                    "source_roots": [
+                        str(tmp_path / "orders" / "src" / "main" / "java")
+                    ],
+                    "generated_source_roots": [],
+                    "project_dependencies": [],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+            }
         }
-    })
+    )
     resolver = _resolver_for_file(workspace, service_file, [tmp_path / "orders"])
 
-    chunks = parse_java(service_file.read_bytes(), filepath=str(service_file), resolver=resolver)
+    chunks = parse_java(
+        service_file.read_bytes(), filepath=str(service_file), resolver=resolver
+    )
 
     method = _get_method(chunks, "placeOrder")
     assert "com.app.orders.PaymentGateway.charge" in method["calls"]
 
 
-def test_workspace_resolution_supports_nested_member_types_from_visible_modules(tmp_path):
+def test_workspace_resolution_supports_nested_member_types_from_visible_modules(
+    tmp_path,
+):
     app_src = tmp_path / "app" / "src" / "main" / "java" / "com" / "app"
     shared_src = tmp_path / "shared" / "src" / "main" / "java" / "com" / "shared"
     app_src.mkdir(parents=True)
@@ -247,33 +276,43 @@ public class Outer {
         encoding="utf-8",
     )
 
-    workspace = GradleWorkspaceModel.from_dict({
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [":shared:main"],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-            ":shared:main": {
-                "source_roots": [str(tmp_path / "shared" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
+    workspace = GradleWorkspaceModel.from_dict(
+        {
+            "source_sets": {
+                ":app:main": {
+                    "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
+                    "generated_source_roots": [],
+                    "project_dependencies": [":shared:main"],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+                ":shared:main": {
+                    "source_roots": [
+                        str(tmp_path / "shared" / "src" / "main" / "java")
+                    ],
+                    "generated_source_roots": [],
+                    "project_dependencies": [],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+            }
         }
-    })
-    resolver = _resolver_for_file(workspace, consumer_file, [tmp_path / "app", tmp_path / "shared"])
+    )
+    resolver = _resolver_for_file(
+        workspace, consumer_file, [tmp_path / "app", tmp_path / "shared"]
+    )
 
-    chunks = parse_java(consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver)
+    chunks = parse_java(
+        consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver
+    )
 
     method = _get_method(chunks, "use")
     assert "com.shared.Outer.Inner.run" in method["calls"]
 
 
-def test_workspace_resolution_supports_test_source_sets_seeing_test_only_project_deps(tmp_path):
+def test_workspace_resolution_supports_test_source_sets_seeing_test_only_project_deps(
+    tmp_path,
+):
     app_test_src = tmp_path / "app" / "src" / "test" / "java" / "com" / "app"
     helper_test_src = tmp_path / "helper" / "src" / "test" / "java" / "com" / "helper"
     app_test_src.mkdir(parents=True)
@@ -305,27 +344,35 @@ public class TestSupport {
         encoding="utf-8",
     )
 
-    workspace = GradleWorkspaceModel.from_dict({
-        "source_sets": {
-            ":app:test": {
-                "source_roots": [str(tmp_path / "app" / "src" / "test" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [":helper:test"],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-            ":helper:test": {
-                "source_roots": [str(tmp_path / "helper" / "src" / "test" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
+    workspace = GradleWorkspaceModel.from_dict(
+        {
+            "source_sets": {
+                ":app:test": {
+                    "source_roots": [str(tmp_path / "app" / "src" / "test" / "java")],
+                    "generated_source_roots": [],
+                    "project_dependencies": [":helper:test"],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+                ":helper:test": {
+                    "source_roots": [
+                        str(tmp_path / "helper" / "src" / "test" / "java")
+                    ],
+                    "generated_source_roots": [],
+                    "project_dependencies": [],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+            }
         }
-    })
-    resolver = _resolver_for_file(workspace, consumer_file, [tmp_path / "app", tmp_path / "helper"])
+    )
+    resolver = _resolver_for_file(
+        workspace, consumer_file, [tmp_path / "app", tmp_path / "helper"]
+    )
 
-    chunks = parse_java(consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver)
+    chunks = parse_java(
+        consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver
+    )
 
     method = _get_method(chunks, "verify")
     assert "com.helper.TestSupport.prepare" in method["calls"]
@@ -333,7 +380,16 @@ public class TestSupport {
 
 def test_workspace_resolution_indexes_generated_source_roots(tmp_path):
     app_src = tmp_path / "app" / "src" / "main" / "java" / "com" / "app"
-    generated_src = tmp_path / "helper" / "build" / "generated" / "sources" / "annotations" / "com" / "helper"
+    generated_src = (
+        tmp_path
+        / "helper"
+        / "build"
+        / "generated"
+        / "sources"
+        / "annotations"
+        / "com"
+        / "helper"
+    )
     app_src.mkdir(parents=True)
     generated_src.mkdir(parents=True)
 
@@ -363,43 +419,81 @@ public class GeneratedBean {
         encoding="utf-8",
     )
 
-    workspace = GradleWorkspaceModel.from_dict({
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [":helper:main"],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-            ":helper:main": {
-                "source_roots": [],
-                "generated_source_roots": [
-                    str(tmp_path / "helper" / "build" / "generated" / "sources" / "annotations")
-                ],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
+    workspace = GradleWorkspaceModel.from_dict(
+        {
+            "source_sets": {
+                ":app:main": {
+                    "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
+                    "generated_source_roots": [],
+                    "project_dependencies": [":helper:main"],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+                ":helper:main": {
+                    "source_roots": [],
+                    "generated_source_roots": [
+                        str(
+                            tmp_path
+                            / "helper"
+                            / "build"
+                            / "generated"
+                            / "sources"
+                            / "annotations"
+                        )
+                    ],
+                    "project_dependencies": [],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+            }
         }
-    })
-    resolver = _resolver_for_file(workspace, consumer_file, [tmp_path / "app", tmp_path / "helper"])
+    )
+    resolver = _resolver_for_file(
+        workspace, consumer_file, [tmp_path / "app", tmp_path / "helper"]
+    )
 
-    chunks = parse_java(consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver)
+    chunks = parse_java(
+        consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver
+    )
 
     method = _get_method(chunks, "use")
     assert "com.helper.GeneratedBean.execute" in method["calls"]
 
 
 def test_real_micronaut_local_resolution_with_exported_workspace_model():
-    repo = Path("/Users/vedangbarhate/Desktop/workspace/codelens/java_repos/micronaut-core")
+    repo = Path(
+        "/Users/vedangbarhate/Desktop/workspace/codelens/java_repos/micronaut-core"
+    )
     export_path = Path("/tmp/micronaut-workspace-model.json")
     target_files = [
-        repo / "inject-java" / "src" / "test" / "groovy" / "io" / "micronaut" / "inject" / "configuration" / "ExternalConfigurationImport.java",
-        repo / "inject-java" / "src" / "test" / "groovy" / "io" / "micronaut" / "inject" / "beans" / "external" / "ExternalBeanImport.java",
+        repo
+        / "inject-java"
+        / "src"
+        / "test"
+        / "groovy"
+        / "io"
+        / "micronaut"
+        / "inject"
+        / "configuration"
+        / "ExternalConfigurationImport.java",
+        repo
+        / "inject-java"
+        / "src"
+        / "test"
+        / "groovy"
+        / "io"
+        / "micronaut"
+        / "inject"
+        / "beans"
+        / "external"
+        / "ExternalBeanImport.java",
     ]
 
-    if not repo.exists() or not export_path.exists() or not all(path.exists() for path in target_files):
+    if (
+        not repo.exists()
+        or not export_path.exists()
+        or not all(path.exists() for path in target_files)
+    ):
         pytest.skip("micronaut-core repo or exported workspace model is not available")
 
     workspace = GradleWorkspaceModel.from_json_file(export_path)
@@ -421,7 +515,9 @@ def test_real_micronaut_local_resolution_with_exported_workspace_model():
     ]:
         source_set_id = workspace.source_set_for_file(target_file)
         assert source_set_id is not None
-        visible_source_set_keys = {item.key for item in workspace.visible_source_sets(source_set_id)}
+        visible_source_set_keys = {
+            item.key for item in workspace.visible_source_sets(source_set_id)
+        }
         expected_source_set = (
             ":micronaut-inject-java-helper:main"
             if type_name == "ExternalConfiguration"
@@ -430,8 +526,7 @@ def test_real_micronaut_local_resolution_with_exported_workspace_model():
         assert expected_source_set in visible_source_set_keys
 
         visible_roots = [
-            Path(root)
-            for root in workspace.source_sets[expected_source_set].all_roots
+            Path(root) for root in workspace.source_sets[expected_source_set].all_roots
         ]
         source_index = build_source_symbol_index(
             visible_roots,
@@ -454,7 +549,9 @@ def test_real_micronaut_local_resolution_with_exported_workspace_model():
 
 
 def test_real_micronaut_external_resolution_with_exported_workspace_model():
-    repo = Path("/Users/vedangbarhate/Desktop/workspace/codelens/java_repos/micronaut-core")
+    repo = Path(
+        "/Users/vedangbarhate/Desktop/workspace/codelens/java_repos/micronaut-core"
+    )
     export_path = Path("/tmp/micronaut-workspace-model.json")
     target_file = (
         repo
@@ -474,7 +571,9 @@ def test_real_micronaut_external_resolution_with_exported_workspace_model():
     workspace = GradleWorkspaceModel.from_json_file(export_path)
     source_set_id = workspace.source_set_for_file(target_file)
     if source_set_id is None:
-        pytest.skip("target file is not mapped to a source set in the exported workspace model")
+        pytest.skip(
+            "target file is not mapped to a source set in the exported workspace model"
+        )
 
     binary_paths = [
         Path(entry)
@@ -482,9 +581,13 @@ def test_real_micronaut_external_resolution_with_exported_workspace_model():
         if "slf4j" in entry.lower() and Path(entry).exists()
     ]
     if not binary_paths:
-        pytest.skip("exported workspace model does not include external binary entries for slf4j")
+        pytest.skip(
+            "exported workspace model does not include external binary entries for slf4j"
+        )
 
-    visible_roots = [Path(root) for root in workspace.visible_source_roots(source_set_id)]
+    visible_roots = [
+        Path(root) for root in workspace.visible_source_roots(source_set_id)
+    ]
     source_index = build_source_symbol_index(
         visible_roots,
         source_set_lookup=workspace.source_set_lookup,
@@ -511,7 +614,9 @@ def test_real_micronaut_external_resolution_with_exported_workspace_model():
 
 
 def test_real_micronaut_jdk_resolution_uses_exported_jdk_home():
-    repo = Path("/Users/vedangbarhate/Desktop/workspace/codelens/java_repos/micronaut-core")
+    repo = Path(
+        "/Users/vedangbarhate/Desktop/workspace/codelens/java_repos/micronaut-core"
+    )
     export_path = Path("/tmp/micronaut-workspace-model.json")
     target_file = (
         repo
@@ -536,7 +641,9 @@ def test_real_micronaut_jdk_resolution_uses_exported_jdk_home():
 
     source_set_id = workspace.source_set_for_file(target_file)
     if source_set_id is None:
-        pytest.skip("target file is not mapped to a source set in the exported workspace model")
+        pytest.skip(
+            "target file is not mapped to a source set in the exported workspace model"
+        )
 
     source_index = build_source_symbol_index(
         [Path(root) for root in workspace.visible_source_roots(source_set_id)],
@@ -551,7 +658,9 @@ def test_real_micronaut_jdk_resolution_uses_exported_jdk_home():
         )
     )
 
-    chunks = parse_java(target_file.read_bytes(), filepath=str(target_file), resolver=resolver)
+    chunks = parse_java(
+        target_file.read_bytes(), filepath=str(target_file), resolver=resolver
+    )
 
     convert_method = _get_method(chunks, "convert")
     parse_size_method = _get_method(chunks, "parseSizeWithUnit")
@@ -565,7 +674,9 @@ def test_real_micronaut_jdk_resolution_uses_exported_jdk_home():
     assert "java.lang.String.length" in parse_size_method["calls"]
 
 
-def test_workspace_resolution_uses_external_class_directories_and_excludes_project_jars(tmp_path):
+def test_workspace_resolution_uses_external_class_directories_and_excludes_project_jars(
+    tmp_path,
+):
     app_src = tmp_path / "app" / "src" / "main" / "java" / "com" / "app"
     shared_src = tmp_path / "shared" / "src" / "main" / "java" / "com" / "shared"
     external_classes = tmp_path / "external" / "classes" / "org" / "slf4j"
@@ -598,29 +709,33 @@ class Consumer {
     with ZipFile(local_jar, "w") as jar:
         jar.writestr("com/shared/ProjectOnly.class", b"")
 
-    workspace = GradleWorkspaceModel.from_dict({
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [":shared:main"],
-                "external_jars": [],
-                "project_artifact_entries": [str(local_jar)],
-                "external_binary_entries": [str(tmp_path / "external" / "classes")],
-                "compile_classpath_entries": [
-                    str(local_jar),
-                    str(tmp_path / "external" / "classes"),
-                ],
-            },
-            ":shared:main": {
-                "source_roots": [str(tmp_path / "shared" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
+    workspace = GradleWorkspaceModel.from_dict(
+        {
+            "source_sets": {
+                ":app:main": {
+                    "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
+                    "generated_source_roots": [],
+                    "project_dependencies": [":shared:main"],
+                    "external_jars": [],
+                    "project_artifact_entries": [str(local_jar)],
+                    "external_binary_entries": [str(tmp_path / "external" / "classes")],
+                    "compile_classpath_entries": [
+                        str(local_jar),
+                        str(tmp_path / "external" / "classes"),
+                    ],
+                },
+                ":shared:main": {
+                    "source_roots": [
+                        str(tmp_path / "shared" / "src" / "main" / "java")
+                    ],
+                    "generated_source_roots": [],
+                    "project_dependencies": [],
+                    "external_jars": [],
+                    "external_binary_entries": [],
+                },
+            }
         }
-    })
+    )
     resolver = _resolver_for_file(
         workspace,
         consumer_file,
@@ -628,7 +743,9 @@ class Consumer {
         binary_paths=[local_jar, tmp_path / "external" / "classes"],
     )
 
-    chunks = parse_java(consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver)
+    chunks = parse_java(
+        consumer_file.read_bytes(), filepath=str(consumer_file), resolver=resolver
+    )
 
     method = _get_method(chunks, "log")
     assert "org.slf4j.LoggerFactory.getLogger" in method["calls"]

@@ -54,7 +54,9 @@ def build_index_documents(
     repo_root_path = Path(repo_root).resolve()
     repo_root_str = str(repo_root_path)
     chunk_list = list(chunks)
-    file_chunk = next((chunk for chunk in chunk_list if chunk.get("kind") == "file"), None)
+    file_chunk = next(
+        (chunk for chunk in chunk_list if chunk.get("kind") == "file"), None
+    )
     package_name = _package_name(file_chunk)
     positions: dict[str, int] = {}
     documents: list[IndexDocument] = []
@@ -118,7 +120,9 @@ def build_index_document(
     throws = tuple(str(item) for item in chunk.get("throws", ()))
     implements = _split_clause(chunk.get("implements"), "implements")
     extends_name = _strip_clause_prefix(chunk.get("extends"), "extends")
-    source_text = source_text if source_text is not None else str(chunk.get("text") or "").strip()
+    source_text = (
+        source_text if source_text is not None else str(chunk.get("text") or "").strip()
+    )
     field_type = chunk.get("field_type") or chunk.get("component_type")
     signature = _build_signature(chunk)
     retrieval_label = _retrieval_label(
@@ -225,9 +229,7 @@ def document_payload(document: IndexDocument) -> dict:
         "indexed_at": document.indexed_at,
     }
     return {
-        key: value
-        for key, value in payload.items()
-        if value not in (None, "", [], ())
+        key: value for key, value in payload.items() if value not in (None, "", [], ())
     }
 
 
@@ -296,7 +298,9 @@ def _strip_clause_prefix(value: str | None, keyword: str) -> str | None:
     return value.replace(f"{keyword} ", "", 1).strip()
 
 
-def _qualified_name(package_name: str | None, owner_chain: tuple[str, ...], name: str) -> str:
+def _qualified_name(
+    package_name: str | None, owner_chain: tuple[str, ...], name: str
+) -> str:
     parts = []
     if package_name:
         parts.append(package_name)

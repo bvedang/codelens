@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Iterable
 from zipfile import ZipFile
 
 from codelens.constants import TYPE_NODES
@@ -65,12 +65,19 @@ class SymbolIndex:
                 definition.filepath,
             )
             deduped[key] = definition
-        return cls(definitions=tuple(sorted(deduped.values(), key=lambda d: (
-            d.qualified_name,
-            d.origin_kind,
-            d.container or "",
-            d.filepath or "",
-        ))))
+        return cls(
+            definitions=tuple(
+                sorted(
+                    deduped.values(),
+                    key=lambda d: (
+                        d.qualified_name,
+                        d.origin_kind,
+                        d.container or "",
+                        d.filepath or "",
+                    ),
+                )
+            )
+        )
 
     def merge(self, *others: "SymbolIndex") -> "SymbolIndex":
         merged = list(self.definitions)
@@ -80,13 +87,14 @@ class SymbolIndex:
 
     def lookup(self, simple_name: str) -> tuple[SymbolDefinition, ...]:
         return tuple(
-            definition for definition in self.definitions
+            definition
+            for definition in self.definitions
             if definition.simple_name == simple_name
         )
 
-    def qualified_names(self,
-                        origin_kind: str | None = None,
-                        containers: Iterable[str] | None = None) -> tuple[str, ...]:
+    def qualified_names(
+        self, origin_kind: str | None = None, containers: Iterable[str] | None = None
+    ) -> tuple[str, ...]:
         allowed = set(containers) if containers is not None else None
         names = {
             definition.qualified_name
@@ -96,16 +104,17 @@ class SymbolIndex:
         }
         return tuple(sorted(names))
 
-    def to_type_index(self,
-                      origin_kind: str | None = None,
-                      containers: Iterable[str] | None = None) -> TypeIndex:
+    def to_type_index(
+        self, origin_kind: str | None = None, containers: Iterable[str] | None = None
+    ) -> TypeIndex:
         return TypeIndex.from_qualified_names(
             self.qualified_names(origin_kind=origin_kind, containers=containers)
         )
 
 
-def build_source_symbol_index(paths: Iterable[str | Path],
-                              source_set_lookup=None) -> SymbolIndex:
+def build_source_symbol_index(
+    paths: Iterable[str | Path], source_set_lookup=None
+) -> SymbolIndex:
     definitions: list[SymbolDefinition] = []
     for path in paths:
         current = Path(path)
@@ -134,9 +143,9 @@ def build_source_symbol_index(paths: Iterable[str | Path],
     return SymbolIndex.from_definitions(definitions)
 
 
-def _collect_source_symbols(code: bytes, root, package_name: str | None,
-                            container: str | None,
-                            filepath: str) -> list[SymbolDefinition]:
+def _collect_source_symbols(
+    code: bytes, root, package_name: str | None, container: str | None, filepath: str
+) -> list[SymbolDefinition]:
     definitions: list[SymbolDefinition] = []
 
     def visit(node, owner_chain: list[str]) -> None:
@@ -151,12 +160,14 @@ def _collect_source_symbols(code: bytes, root, package_name: str | None,
         qualified_name = ".".join(
             [part for part in [package_name, *owner_chain, simple_name] if part]
         )
-        definitions.append(SymbolDefinition(
-            qualified_name=qualified_name,
-            container=container,
-            origin_kind="source",
-            filepath=filepath,
-        ))
+        definitions.append(
+            SymbolDefinition(
+                qualified_name=qualified_name,
+                container=container,
+                origin_kind="source",
+                filepath=filepath,
+            )
+        )
 
         body = _class_body(node)
         if body is None:
@@ -197,12 +208,14 @@ def build_jdk_symbol_index(jdk_home: str | Path) -> SymbolIndex:
                 qualified_name = _qualified_name_from_jmod_entry(entry)
                 if qualified_name is None:
                     continue
-                definitions.append(SymbolDefinition(
-                    qualified_name=qualified_name,
-                    container=str(jmod_path),
-                    origin_kind="jdk",
-                    filepath=None,
-                ))
+                definitions.append(
+                    SymbolDefinition(
+                        qualified_name=qualified_name,
+                        container=str(jmod_path),
+                        origin_kind="jdk",
+                        filepath=None,
+                    )
+                )
     return SymbolIndex.from_definitions(definitions)
 
 
@@ -213,12 +226,14 @@ def _binary_definitions_from_jar(jar_path: Path) -> list[SymbolDefinition]:
             qualified_name = _qualified_name_from_class_entry(entry)
             if qualified_name is None:
                 continue
-            definitions.append(SymbolDefinition(
-                qualified_name=qualified_name,
-                container=str(jar_path),
-                origin_kind="binary",
-                filepath=None,
-            ))
+            definitions.append(
+                SymbolDefinition(
+                    qualified_name=qualified_name,
+                    container=str(jar_path),
+                    origin_kind="binary",
+                    filepath=None,
+                )
+            )
     return definitions
 
 
@@ -229,12 +244,14 @@ def _binary_definitions_from_directory(directory: Path) -> list[SymbolDefinition
         qualified_name = _qualified_name_from_class_entry(relative_entry)
         if qualified_name is None:
             continue
-        definitions.append(SymbolDefinition(
-            qualified_name=qualified_name,
-            container=str(directory),
-            origin_kind="binary",
-            filepath=None,
-        ))
+        definitions.append(
+            SymbolDefinition(
+                qualified_name=qualified_name,
+                container=str(directory),
+                origin_kind="binary",
+                filepath=None,
+            )
+        )
     return definitions
 
 
@@ -249,7 +266,7 @@ def _find_jmods_dir(jdk_home: Path) -> Path:
 def _qualified_name_from_jmod_entry(entry: str) -> str | None:
     if not entry.startswith("classes/"):
         return None
-    return _qualified_name_from_class_entry(entry[len("classes/"):])
+    return _qualified_name_from_class_entry(entry[len("classes/") :])
 
 
 def _qualified_name_from_class_entry(entry: str) -> str | None:
