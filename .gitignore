@@ -21,5 +21,7 @@ java_repos
 .DS_Store
 
 *.db
+*.db-shm
+*.db-wal
 
 CLAUDE.md
