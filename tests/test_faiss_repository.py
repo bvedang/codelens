@@ -169,3 +169,48 @@ def test_faiss_repository_checkpoints_workspace_shards_and_resume_state(tmp_path
     assert loaded.chunks["chunk-1"].shard == "00000000.faiss"
     retained = repository.entries_with_vectors()
     assert retained[0][1][0] == pytest.approx([0.1, 0.2])
+
+
+def test_faiss_repository_retries_interrupted_workspace_file_without_duplicate_chunks(tmp_path):
+    fake_faiss = _FakeFaiss()
+    repository = FaissIndexRepository(tmp_path, faiss_module=fake_faiss)
+
+    repository.start_workspace_build(
+        filepaths=["/repo/src/Keep.java"],
+        workspace_signature="workspace-v1",
+        model_name="lightonai/ColBERT-Zero",
+        indexed_at="2026-03-10T00:00:00+00:00",
+    )
+
+    entries = [
+        {
+            "chunk_id": f"{repository._repo_hash}:src/Keep.java:method:keep",
+            "file_path": "src/Keep.java",
+            "chunk_kind": "method",
+            "retrieval_text": "[method] ...",
+            "source_text": "void keep() { System.out.println(1); }",
+        }
+    ]
+    vectors = [[[0.1, 0.2]]]
+
+    with patch.object(repository, "_write_state", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError, match="boom"):
+            repository.append_workspace_file(
+                workspace_file="/repo/src/Keep.java",
+                entries=entries,
+                vectors=vectors,
+            )
+
+    state = repository.append_workspace_file(
+        workspace_file="/repo/src/Keep.java",
+        entries=entries,
+        vectors=vectors,
+    )
+
+    assert state.completed_files == ["/repo/src/Keep.java"]
+    loaded = repository.load()
+    assert loaded is not None
+    assert list(loaded.chunks) == [f"{repository._repo_hash}:src/Keep.java:method:keep"]
+    retained = repository.entries_with_vectors()
+    assert retained[0][0] == entries[0]
+    assert retained[0][1][0] == pytest.approx([0.1, 0.2])

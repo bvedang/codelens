@@ -44,12 +44,22 @@ def insert_index_chunks(session:Session, chunks:list[IndexChunk]) -> None:
     commit(session)
 
 
+def delete_index_chunks_by_prefix(session: Session, repo_root: str, chunk_id_prefix: str) -> None:
+    session.exec(
+        delete(IndexChunk).where(
+            col(IndexChunk.repo_root) == repo_root,
+            col(IndexChunk.chunk_id).like(f"{chunk_id_prefix}%"),
+        )
+    )
+    commit(session)
+
+
 def delete_index_chunks_by_repo(session: Session, repo_root: str) -> None:
-    session.execute(delete(IndexChunk).where(col(IndexChunk.repo_root) == repo_root))
+    session.exec(delete(IndexChunk).where(col(IndexChunk.repo_root) == repo_root))
     commit(session)
 
 def delete_index_metadata(session: Session, repo_root: str) -> None:
-    session.execute(delete(IndexMeta).where(col(IndexMeta.repo_root) == repo_root))
+    session.exec(delete(IndexMeta).where(col(IndexMeta.repo_root) == repo_root))
     commit(session)
 
 

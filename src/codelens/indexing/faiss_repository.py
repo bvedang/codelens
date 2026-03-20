@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import shutil
+from hashlib import sha1
 from pathlib import Path
 from typing import Any, Mapping, Sequence, cast
 
-import faiss
 import numpy as np
 
 from codelens.db.session import get_session
@@ -16,6 +16,7 @@ from codelens.indexing.models import (
 from codelens.logging_config import get_logger
 from codelens.models.index_chunk import IndexBuildState, IndexChunk, IndexMeta
 from codelens.repository.index_chunk_repo import (
+    delete_index_chunks_by_prefix,
     delete_index_chunks_by_repo,
     delete_index_metadata,
     get_index_build_status,
@@ -32,18 +33,15 @@ class FaissIndexRepository:
     def __init__(self, repo_root: str | Path, *, faiss_module=None) -> None:
         self._repo_root = Path(repo_root).resolve()
         self._repo_key = str(self._repo_root)
+        self._repo_hash = sha1(self._repo_key.encode("utf-8")).hexdigest()[:12]
         self._index_dir = self._repo_root / ".codelens" / "index"
         self._vectors_path = self._index_dir / "vectors.faiss"
         self._shards_dir = self._index_dir / "shards"
-        self._lock_path = self._index_dir / "index.lock"
+        self._faiss_module = faiss_module
 
     @property
     def index_dir(self) -> Path:
         return self._index_dir
-
-    @property
-    def lock_path(self) -> Path:
-        return self._lock_path
 
     def load(self) -> LoadedIndex | None:
         with get_session() as session:
@@ -149,6 +147,8 @@ class FaissIndexRepository:
             self._write_flat_index(flat_vectors, vector_size, self._shards_dir / shard_name)
 
             with get_session() as session:
+                for chunk_id_prefix in self._chunk_id_prefixes(entries):
+                    delete_index_chunks_by_prefix(session, self._repo_key, chunk_id_prefix)
                 insert_index_chunks(session, chunks)
 
             next_shard_id += 1
@@ -269,13 +269,14 @@ class FaissIndexRepository:
         vector_size: int,
         path: Path,
     ) -> None:
-
+        faiss = self._faiss()
         index = cast(Any, faiss.IndexFlatIP(vector_size))
         index.add(np.asarray(flat_vectors, dtype="float32"))
         faiss.write_index(index, str(path))
+        path.touch(exist_ok=True)
 
     def _read_index(self, path: Path):
-        return faiss.read_index(str(path))
+        return self._faiss().read_index(str(path))
 
     def _require_workspace_state(self) -> IndexBuildState:
         state = self.load_workspace_state()
@@ -337,3 +338,21 @@ class FaissIndexRepository:
                 shard=shard,
             ))
         return chunks, flat_vectors, vector_size
+
+    def _faiss(self):
+        if self._faiss_module is None:
+            import faiss
+
+            self._faiss_module = faiss
+        return self._faiss_module
+
+    def _chunk_id_prefixes(self, entries: Sequence[Mapping[str, Any]]) -> set[str]:
+        file_paths = {
+            str(entry["file_path"])
+            for entry in entries
+            if entry.get("file_path")
+        }
+        return {
+            f"{self._repo_hash}:{file_path}:"
+            for file_path in file_paths
+        }
