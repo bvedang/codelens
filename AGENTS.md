@@ -1,3 +1,35 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+Core code lives in `src/codelens`. The main CLI entrypoint is `src/codelens/__main__.py`, exposed as `codelens`. Indexing code sits under `src/codelens/indexing`, retrieval code under `src/codelens/retrieval`, and SQLite-backed persistence under `src/codelens/db` and `src/codelens/repository`. Tests live in `tests`, with longer environment-dependent coverage in `tests/integration`. Keep new modules close to the feature they support.
+
+## Build, Test, and Development Commands
+
+Use `uv` for local work.
+
+- `uv sync --dev` installs runtime and test dependencies.
+- `uv run pytest` runs the full test suite.
+- `uv run pytest --cov=codelens` runs tests with coverage.
+- `uv run pytest tests/integration` runs integration tests. Some cases skip unless you have exported Gradle workspace metadata and related local fixtures.
+- `uv run codelens index status --repo-root /path/to/repo` checks the local index state.
+
+The app creates local SQLite state during indexing, so use a disposable repo path while testing CLI changes.
+
+## Coding Style & Naming Conventions
+
+Follow the existing Python style in `src/`: 4-space indentation, type hints where they help, and small focused functions. Use `snake_case` for modules, functions, and test files like `test_workspace_runtime.py`. Use `PascalCase` for classes. Prefer explicit imports from local packages over wildcard imports. No formatter or linter is wired into `pyproject.toml` yet, so match the surrounding code before introducing new style tooling.
+
+## Testing Guidelines
+
+Write unit tests beside similar files in `tests/` and name them `test_<feature>.py`. Use `pytest` fixtures and `monkeypatch` for CLI and service isolation. Add integration tests only when behavior depends on real workspace layout, JDK classes, jars, or Gradle export data. Run `uv run pytest --cov=codelens` before opening a PR.
+
+## Commit & Pull Request Guidelines
+
+Recent history uses short Conventional Commit prefixes like `feat:` and `chore:`. Keep commit subjects imperative and specific, for example `feat: add workspace index cache invalidation`. For PRs, include a short summary, linked issue if there is one, test results, and sample CLI output when user-facing behavior changes.
+
+---
+
 # Writing Rules
 
 Write like you're talking to a smart friend. If you wouldn't say it in conversation, don't write it.
