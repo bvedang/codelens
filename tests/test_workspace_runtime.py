@@ -13,7 +13,9 @@ from codelens.workspace_runtime import (
 )
 
 
-def test_build_workspace_resolver_context_assembles_source_binary_and_jdk_indexes(tmp_path):
+def test_build_workspace_resolver_context_assembles_source_binary_and_jdk_indexes(
+    tmp_path,
+):
     app_src = tmp_path / "app" / "src" / "main" / "java" / "com" / "app"
     shared_src = tmp_path / "shared" / "src" / "main" / "java" / "com" / "shared"
     libs_dir = tmp_path / "libs"
@@ -51,26 +53,35 @@ class Consumer {
         jmod.writestr("classes/java/lang/String.class", b"")
 
     workspace_json = tmp_path / "workspace.json"
-    workspace_json.write_text(json.dumps({
-        "schema_version": 1,
-        "jdk_home": str(tmp_path / "fake-jdk"),
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [":shared:main"],
-                "external_jars": [str(libs_dir / "slf4j-api.jar")],
-                "external_binary_entries": [str(libs_dir / "slf4j-api.jar")],
-            },
-            ":shared:main": {
-                "source_roots": [str(tmp_path / "shared" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-        },
-    }), encoding="utf-8")
+    workspace_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "jdk_home": str(tmp_path / "fake-jdk"),
+                "source_sets": {
+                    ":app:main": {
+                        "source_roots": [
+                            str(tmp_path / "app" / "src" / "main" / "java")
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [":shared:main"],
+                        "external_jars": [str(libs_dir / "slf4j-api.jar")],
+                        "external_binary_entries": [str(libs_dir / "slf4j-api.jar")],
+                    },
+                    ":shared:main": {
+                        "source_roots": [
+                            str(tmp_path / "shared" / "src" / "main" / "java")
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     context = build_workspace_resolver_context(
         consumer_file,
@@ -83,8 +94,16 @@ class Consumer {
     assert context.binary_index is not None
     assert context.jdk_index is not None
 
-    chunks = parse_java(consumer_file.read_bytes(), filepath=str(consumer_file), resolver=context.resolver)
-    method = next(chunk for chunk in chunks if chunk["kind"] == "method" and chunk["name"] == "use")
+    chunks = parse_java(
+        consumer_file.read_bytes(),
+        filepath=str(consumer_file),
+        resolver=context.resolver,
+    )
+    method = next(
+        chunk
+        for chunk in chunks
+        if chunk["kind"] == "method" and chunk["name"] == "use"
+    )
     assert "com.shared.SharedGateway.charge" in method["calls"]
     assert "org.slf4j.LoggerFactory.getLogger" in method["calls"]
     assert "java.lang.String.trim" in method["calls"]
@@ -95,7 +114,7 @@ def test_parse_java_file_with_workspace_returns_chunks_and_context(tmp_path):
     src.mkdir(parents=True)
     java_file = src / "Hello.java"
     java_file.write_text(
-        "package com.app; class Hello { String value() { String text = \"x\"; return text.trim(); } }",
+        'package com.app; class Hello { String value() { String text = "x"; return text.trim(); } }',
         encoding="utf-8",
     )
 
@@ -105,24 +124,37 @@ def test_parse_java_file_with_workspace_returns_chunks_and_context(tmp_path):
         jmod.writestr("classes/java/lang/String.class", b"")
 
     workspace_json = tmp_path / "workspace.json"
-    workspace_json.write_text(json.dumps({
-        "schema_version": 1,
-        "jdk_home": str(tmp_path / "fake-jdk"),
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-        },
-    }), encoding="utf-8")
+    workspace_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "jdk_home": str(tmp_path / "fake-jdk"),
+                "source_sets": {
+                    ":app:main": {
+                        "source_roots": [
+                            str(tmp_path / "app" / "src" / "main" / "java")
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
-    chunks, context = parse_java_file_with_workspace(java_file, workspace_json=workspace_json)
+    chunks, context = parse_java_file_with_workspace(
+        java_file, workspace_json=workspace_json
+    )
 
     assert context.filepath == str(java_file.resolve())
-    method = next(chunk for chunk in chunks if chunk["kind"] == "method" and chunk["name"] == "value")
+    method = next(
+        chunk
+        for chunk in chunks
+        if chunk["kind"] == "method" and chunk["name"] == "value"
+    )
     assert "java.lang.String.trim" in method["calls"]
 
 
@@ -131,7 +163,7 @@ def test_workspace_runtime_reuses_cached_indexes_until_inputs_change(tmp_path):
     src.mkdir(parents=True)
     java_file = src / "Hello.java"
     java_file.write_text(
-        "package com.app; class Hello { String value() { String text = \"x\"; return text.trim(); } }",
+        'package com.app; class Hello { String value() { String text = "x"; return text.trim(); } }',
         encoding="utf-8",
     )
 
@@ -141,19 +173,26 @@ def test_workspace_runtime_reuses_cached_indexes_until_inputs_change(tmp_path):
         jmod.writestr("classes/java/lang/String.class", b"")
 
     workspace_json = tmp_path / "workspace.json"
-    workspace_json.write_text(json.dumps({
-        "schema_version": 1,
-        "jdk_home": str(tmp_path / "fake-jdk"),
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str(tmp_path / "app" / "src" / "main" / "java")],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-        },
-    }), encoding="utf-8")
+    workspace_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "jdk_home": str(tmp_path / "fake-jdk"),
+                "source_sets": {
+                    ":app:main": {
+                        "source_roots": [
+                            str(tmp_path / "app" / "src" / "main" / "java")
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     cache = IndexCache()
     first = build_workspace_resolver_context(
@@ -171,7 +210,7 @@ def test_workspace_runtime_reuses_cached_indexes_until_inputs_change(tmp_path):
     assert first.jdk_index is second.jdk_index
 
     java_file.write_text(
-        "package com.app; class Hello { String value() { String text = \"x\"; return text.strip(); } }",
+        'package com.app; class Hello { String value() { String text = "x"; return text.strip(); } }',
         encoding="utf-8",
     )
 
@@ -200,25 +239,38 @@ def test_workspace_runtime_reuses_shared_source_index_across_source_sets(tmp_pat
     )
 
     workspace_json = tmp_path / "workspace.json"
-    workspace_json.write_text(json.dumps({
-        "schema_version": 1,
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str((tmp_path / "app" / "src" / "main" / "java").resolve())],
-                "generated_source_roots": [],
-                "project_dependencies": [":shared:main"],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-            ":shared:main": {
-                "source_roots": [str((tmp_path / "shared" / "src" / "main" / "java").resolve())],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-        },
-    }), encoding="utf-8")
+    workspace_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source_sets": {
+                    ":app:main": {
+                        "source_roots": [
+                            str((tmp_path / "app" / "src" / "main" / "java").resolve())
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [":shared:main"],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    },
+                    ":shared:main": {
+                        "source_roots": [
+                            str(
+                                (
+                                    tmp_path / "shared" / "src" / "main" / "java"
+                                ).resolve()
+                            )
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     cache = IndexCache()
     shared_context = build_workspace_shared_context(
@@ -243,7 +295,9 @@ def test_workspace_runtime_reuses_shared_source_index_across_source_sets(tmp_pat
     assert shared_source_context.source_index is shared_context.source_index
 
 
-def test_workspace_runtime_invalidates_source_index_when_workspace_json_changes(tmp_path):
+def test_workspace_runtime_invalidates_source_index_when_workspace_json_changes(
+    tmp_path,
+):
     app_src = tmp_path / "app" / "src" / "main" / "java" / "com" / "app"
     app_src.mkdir(parents=True)
     java_file = app_src / "Consumer.java"
@@ -253,18 +307,25 @@ def test_workspace_runtime_invalidates_source_index_when_workspace_json_changes(
     )
 
     workspace_json = tmp_path / "workspace.json"
-    workspace_json.write_text(json.dumps({
-        "schema_version": 1,
-        "source_sets": {
-            ":app:main": {
-                "source_roots": [str((tmp_path / "app" / "src" / "main" / "java").resolve())],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-        },
-    }), encoding="utf-8")
+    workspace_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source_sets": {
+                    ":app:main": {
+                        "source_roots": [
+                            str((tmp_path / "app" / "src" / "main" / "java").resolve())
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     cache = IndexCache()
     first = build_workspace_resolver_context(
@@ -273,18 +334,25 @@ def test_workspace_runtime_invalidates_source_index_when_workspace_json_changes(
         index_cache=cache,
     )
 
-    workspace_json.write_text(json.dumps({
-        "schema_version": 1,
-        "source_sets": {
-            ":renamed-app:main": {
-                "source_roots": [str((tmp_path / "app" / "src" / "main" / "java").resolve())],
-                "generated_source_roots": [],
-                "project_dependencies": [],
-                "external_jars": [],
-                "external_binary_entries": [],
-            },
-        },
-    }), encoding="utf-8")
+    workspace_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source_sets": {
+                    ":renamed-app:main": {
+                        "source_roots": [
+                            str((tmp_path / "app" / "src" / "main" / "java").resolve())
+                        ],
+                        "generated_source_roots": [],
+                        "project_dependencies": [],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
 
     second = build_workspace_resolver_context(
         java_file,

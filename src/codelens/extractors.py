@@ -40,8 +40,9 @@ def extract_preceding_comment(code: bytes, node) -> str | None:
     return "\n".join(comments)
 
 
-def _resolve_type_name(type_name: str | None, file_ctx: dict,
-                       resolver: TypeResolver) -> str | None:
+def _resolve_type_name(
+    type_name: str | None, file_ctx: dict, resolver: TypeResolver
+) -> str | None:
     resolution = resolver.resolve_type_reference(
         type_name,
         file_ctx.get("import_context"),
@@ -50,9 +51,9 @@ def _resolve_type_name(type_name: str | None, file_ctx: dict,
     return resolution.best_name()
 
 
-def _resolve_annotation_attribute_value(value: str,
-                                        file_ctx: dict | None,
-                                        resolver: TypeResolver | None) -> str:
+def _resolve_annotation_attribute_value(
+    value: str, file_ctx: dict | None, resolver: TypeResolver | None
+) -> str:
     if not file_ctx or not resolver:
         return value
 
@@ -66,20 +67,25 @@ def _resolve_annotation_attribute_value(value: str,
     return f"{resolved_name}.class"
 
 
-def extract_annotations_full(code: bytes, node,
-                             file_ctx: dict | None = None,
-                             resolver: TypeResolver | None = None) -> list[dict]:
+def extract_annotations_full(
+    code: bytes,
+    node,
+    file_ctx: dict | None = None,
+    resolver: TypeResolver | None = None,
+) -> list[dict]:
     """Get annotations with their attribute values parsed out."""
     annotations = []
     modifiers = first_named(node, "modifiers")
     source = modifiers if modifiers else node
     for child in source.named_children:
         if child.type == "marker_annotation":
-            annotations.append({
-                "text": text(code, child),
-                "name": node_name(code, child),
-                "attributes": {},
-            })
+            annotations.append(
+                {
+                    "text": text(code, child),
+                    "name": node_name(code, child),
+                    "attributes": {},
+                }
+            )
         elif child.type == "annotation":
             attrs = {}
             args = child.child_by_field_name("arguments")
@@ -89,10 +95,12 @@ def extract_annotations_full(code: bytes, node,
                         key_node = arg.child_by_field_name("key")
                         val_node = arg.child_by_field_name("value")
                         if key_node and val_node:
-                            attrs[text(code, key_node)] = _resolve_annotation_attribute_value(
-                                text(code, val_node),
-                                file_ctx,
-                                resolver,
+                            attrs[text(code, key_node)] = (
+                                _resolve_annotation_attribute_value(
+                                    text(code, val_node),
+                                    file_ctx,
+                                    resolver,
+                                )
                             )
                     else:
                         attrs["value"] = _resolve_annotation_attribute_value(
@@ -100,11 +108,13 @@ def extract_annotations_full(code: bytes, node,
                             file_ctx,
                             resolver,
                         )
-            annotations.append({
-                "text": text(code, child),
-                "name": node_name(code, child),
-                "attributes": attrs,
-            })
+            annotations.append(
+                {
+                    "text": text(code, child),
+                    "name": node_name(code, child),
+                    "attributes": attrs,
+                }
+            )
     return annotations
 
 
@@ -116,11 +126,7 @@ def extract_modifiers(code: bytes, node) -> list[str]:
     mods_node = first_named(node, "modifiers")
     if mods_node is None:
         return []
-    return [
-        text(code, child)
-        for child in mods_node.children
-        if not child.is_named
-    ]
+    return [text(code, child) for child in mods_node.children if not child.is_named]
 
 
 def flatten_method_chain(node) -> list[str]:
@@ -135,18 +141,23 @@ def flatten_method_chain(node) -> list[str]:
             if name:
                 calls.append(name.text.decode())
         elif obj and name:
-            calls.append(f"{obj.text.decode()}.{name.text.decode()}"
-                         if obj.type in {"identifier", "this"}
-                         else f"<expr>.{name.text.decode()}")
+            calls.append(
+                f"{obj.text.decode()}.{name.text.decode()}"
+                if obj.type in {"identifier", "this"}
+                else f"<expr>.{name.text.decode()}"
+            )
         elif name:
             calls.append(name.text.decode())
 
     return calls
 
 
-def _resolve_call_target(call: str, field_type_map: dict | None,
-                         file_ctx: dict | None,
-                         resolver: TypeResolver | None) -> str:
+def _resolve_call_target(
+    call: str,
+    field_type_map: dict | None,
+    file_ctx: dict | None,
+    resolver: TypeResolver | None,
+) -> str:
     if "." not in call:
         return call
 
@@ -162,9 +173,12 @@ def _resolve_call_target(call: str, field_type_map: dict | None,
     return call
 
 
-def extract_calls(node, field_type_map: dict | None = None,
-                  file_ctx: dict | None = None,
-                  resolver: TypeResolver | None = None) -> list[str]:
+def extract_calls(
+    node,
+    field_type_map: dict | None = None,
+    file_ctx: dict | None = None,
+    resolver: TypeResolver | None = None,
+) -> list[str]:
     """Walk a subtree and collect every invocation or method reference."""
     calls = []
 
@@ -196,9 +210,13 @@ def extract_calls(node, field_type_map: dict | None = None,
     return calls
 
 
-def _collect_declared_symbols(code: bytes, node, file_ctx: dict,
-                              resolver: TypeResolver,
-                              symbol_type_map: dict[str, str]) -> None:
+def _collect_declared_symbols(
+    code: bytes,
+    node,
+    file_ctx: dict,
+    resolver: TypeResolver,
+    symbol_type_map: dict[str, str],
+) -> None:
     if node.type in TYPE_NODES:
         return
 
@@ -221,7 +239,9 @@ def _collect_declared_symbols(code: bytes, node, file_ctx: dict,
             declared_names = [text(code, name)]
 
     if declared_type:
-        resolved_type = _resolve_type_name(declared_type, file_ctx, resolver) or declared_type
+        resolved_type = (
+            _resolve_type_name(declared_type, file_ctx, resolver) or declared_type
+        )
         for declared_name in declared_names:
             symbol_type_map[declared_name] = resolved_type
 
@@ -229,8 +249,9 @@ def _collect_declared_symbols(code: bytes, node, file_ctx: dict,
         _collect_declared_symbols(code, child, file_ctx, resolver, symbol_type_map)
 
 
-def callable_type_map(code: bytes, node, field_type_map: dict,
-                      file_ctx: dict, resolver: TypeResolver) -> dict[str, str]:
+def callable_type_map(
+    code: bytes, node, field_type_map: dict, file_ctx: dict, resolver: TypeResolver
+) -> dict[str, str]:
     """Merge fields with callable-scoped declarations for call resolution."""
     merged = dict(field_type_map)
 
@@ -257,16 +278,28 @@ def _walk_field_access(node, class_fields: list[str], accessed: set):
     if node.type == "field_access":
         obj = node.child_by_field_name("object")
         field = node.child_by_field_name("field")
-        if obj and field and obj.text.decode() == "this" and field.text.decode() in class_fields:
+        if (
+            obj
+            and field
+            and obj.text.decode() == "this"
+            and field.text.decode() in class_fields
+        ):
             accessed.add(field.text.decode())
 
     if node.type == "identifier":
         name = node.text.decode()
-        if name in class_fields and node.parent and node.parent.type not in {
-            "formal_parameter", "local_variable_declaration",
-            "catch_formal_parameter", "enhanced_for_statement",
-            "lambda_expression",
-        }:
+        if (
+            name in class_fields
+            and node.parent
+            and node.parent.type
+            not in {
+                "formal_parameter",
+                "local_variable_declaration",
+                "catch_formal_parameter",
+                "enhanced_for_statement",
+                "lambda_expression",
+            }
+        ):
             accessed.add(name)
 
     for child in node.named_children:
@@ -302,8 +335,10 @@ def extract_record_components(code: bytes, node) -> list[dict]:
             ptype = child.child_by_field_name("type")
             pname = child.child_by_field_name("name")
             if ptype and pname:
-                components.append({
-                    "name": text(code, pname),
-                    "type": text(code, ptype),
-                })
+                components.append(
+                    {
+                        "name": text(code, pname),
+                        "type": text(code, ptype),
+                    }
+                )
     return components

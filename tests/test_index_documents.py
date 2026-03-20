@@ -1,7 +1,10 @@
 from hashlib import sha1
 
 from codelens.chunker import parse_java
-from codelens.indexing.documents import SKELETON_SEGMENT_MAX_CHARS, build_index_documents
+from codelens.indexing.documents import (
+    SKELETON_SEGMENT_MAX_CHARS,
+    build_index_documents,
+)
 
 
 def _get_document(documents, kind, name):
@@ -13,7 +16,9 @@ def _get_document(documents, kind, name):
 
 def test_build_index_documents_matches_spec_shape(tmp_path):
     repo_root = tmp_path
-    java_file = repo_root / "src" / "main" / "java" / "com" / "app" / "OrderService.java"
+    java_file = (
+        repo_root / "src" / "main" / "java" / "com" / "app" / "OrderService.java"
+    )
     java_file.parent.mkdir(parents=True)
     code = b"""package com.app;
 
@@ -105,12 +110,16 @@ class Overload {
         indexed_at="2026-03-10T00:00:00+00:00",
     )
 
-    chunk_ids = [document.chunk_id for document in documents if document.name == "doesProduce"]
+    chunk_ids = [
+        document.chunk_id for document in documents if document.name == "doesProduce"
+    ]
     assert len(chunk_ids) == 2
     assert len(set(chunk_ids)) == 2
 
 
-def test_build_index_documents_splits_large_skeletons_without_losing_late_members(tmp_path):
+def test_build_index_documents_splits_large_skeletons_without_losing_late_members(
+    tmp_path,
+):
     repo_root = tmp_path
     java_file = repo_root / "src" / "HugeConstants.java"
     java_file.parent.mkdir(parents=True)
@@ -137,7 +146,10 @@ def test_build_index_documents_splits_large_skeletons_without_losing_late_member
     ]
 
     assert len(skeletons) > 1
-    assert all(len(document.source_text) <= SKELETON_SEGMENT_MAX_CHARS + 128 for document in skeletons)
+    assert all(
+        len(document.source_text) <= SKELETON_SEGMENT_MAX_CHARS + 128
+        for document in skeletons
+    )
     assert any("segment 1/" in document.retrieval_text for document in skeletons)
     assert any("segment 2/" in document.retrieval_text for document in skeletons)
     assert any("VALUE_199" in document.source_text for document in skeletons)

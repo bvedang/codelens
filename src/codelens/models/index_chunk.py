@@ -6,6 +6,7 @@ class IndexMeta(SQLModel, table=True):
     model_name: str | None = None
     indexed_at: str | None = None
 
+
 class IndexChunk(SQLModel, table=True):
     chunk_id: str = Field(primary_key=True)
     repo_root: str

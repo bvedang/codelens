@@ -10,9 +10,12 @@ from pathlib import Path
 from codelens.gradle_model import GradleWorkspaceModel
 from codelens.indexing.documents import build_index_documents, document_payload
 from codelens.indexing.encoder import LateInteractionEncoder
-from codelens.indexing.faiss_repository import FaissIndexRepository, MetadataCorruptionError
+from codelens.indexing.faiss_repository import (
+    FaissIndexRepository,
+    MetadataCorruptionError,
+)
 from codelens.logging_config import get_logger, log_event
-from codelens.timing import TimingCollector, Stopwatch, measure
+from codelens.timing import Stopwatch, TimingCollector, measure
 
 logger = get_logger(__name__)
 
@@ -68,7 +71,8 @@ class FaissIndexingService:
             repo_root=normalized_repo_root,
             files=len(filepaths),
             scope="main-only",
-            deferred_source_sets=",".join(selection.deferred_source_set_names) or "none",
+            deferred_source_sets=",".join(selection.deferred_source_set_names)
+            or "none",
             deferred_files=selection.deferred_files,
             batch_size=self._batch_size,
             model=self._encoder.model_name,
@@ -105,7 +109,9 @@ class FaissIndexingService:
 
         normalized_repo_root = str(Path(repo_root).resolve())
         indexed_at = _indexed_at()
-        relative_file_path = file_path.relative_to(Path(normalized_repo_root)).as_posix()
+        relative_file_path = file_path.relative_to(
+            Path(normalized_repo_root)
+        ).as_posix()
 
         log_event(
             logger,
@@ -134,7 +140,9 @@ class FaissIndexingService:
                 workspace=workspace,
                 resolve_binaries=resolve_binaries,
                 jdk_home=jdk_home,
-                files_in_source_set=source_set_file_counts[file_source_sets[str(file_path)]],
+                files_in_source_set=source_set_file_counts[
+                    file_source_sets[str(file_path)]
+                ],
             )
 
         try:
@@ -215,7 +223,9 @@ class FaissIndexingService:
     ) -> IndexingResult:
         completed_files = set(state.completed_files)
         total_files = len(filepaths)
-        pending_filepaths = [filepath for filepath in filepaths if filepath not in completed_files]
+        pending_filepaths = [
+            filepath for filepath in filepaths if filepath not in completed_files
+        ]
         stage_timings = TimingCollector()
         total_timer = Stopwatch.start()
 
@@ -295,7 +305,9 @@ class FaissIndexingService:
                     workspace_file=filepath,
                     error=str(exc),
                 )
-                logger.exception("Failed to parse %s during workspace indexing", filepath)
+                logger.exception(
+                    "Failed to parse %s during workspace indexing", filepath
+                )
                 continue
 
         state = self._repository.complete_workspace_build()
@@ -332,8 +344,10 @@ class FaissIndexingService:
     ):
         if workspace is not None:
             if workspace_context is None:
-                from codelens.workspace_runtime import build_workspace_resolver_context
-                from codelens.workspace_runtime import parse_java_file_with_resolver_context
+                from codelens.workspace_runtime import (
+                    build_workspace_resolver_context,
+                    parse_java_file_with_resolver_context,
+                )
 
                 context = build_workspace_resolver_context(
                     filepath,
@@ -346,7 +360,9 @@ class FaissIndexingService:
                     context=context,
                 )
             else:
-                from codelens.workspace_runtime import parse_java_file_with_resolver_context
+                from codelens.workspace_runtime import (
+                    parse_java_file_with_resolver_context,
+                )
 
                 chunks, context = parse_java_file_with_resolver_context(
                     filepath,
@@ -390,7 +406,9 @@ class FaissIndexingService:
             )
             _release_accelerator_memory()
             midpoint = len(documents) // 2
-            return self._embed_batch(documents[:midpoint]) + self._embed_batch(documents[midpoint:])
+            return self._embed_batch(documents[:midpoint]) + self._embed_batch(
+                documents[midpoint:]
+            )
 
     def _workspace_files(self, workspace: GradleWorkspaceModel) -> list[str]:
         files: set[str] = set()
@@ -419,11 +437,13 @@ class FaissIndexingService:
         )
         selected_files = self._workspace_files(selected_workspace)
 
-        deferred_source_set_names = sorted({
-            source_set.source_set_id.name
-            for source_set in workspace.source_sets.values()
-            if source_set.source_set_id.name != "main"
-        })
+        deferred_source_set_names = sorted(
+            {
+                source_set.source_set_id.name
+                for source_set in workspace.source_sets.values()
+                if source_set.source_set_id.name != "main"
+            }
+        )
         deferred_files = 0
         if deferred_source_set_names:
             deferred_source_sets = {
@@ -465,7 +485,9 @@ class FaissIndexingService:
             source_set_id = workspace.source_set_for_file(filepath)
             source_set_key = source_set_id.key if source_set_id is not None else None
             file_source_sets[filepath] = source_set_key
-            source_set_file_counts[source_set_key] = source_set_file_counts.get(source_set_key, 0) + 1
+            source_set_file_counts[source_set_key] = (
+                source_set_file_counts.get(source_set_key, 0) + 1
+            )
         return file_source_sets, source_set_file_counts
 
     def _build_workspace_context(
@@ -481,7 +503,11 @@ class FaissIndexingService:
         from codelens.workspace_runtime import build_workspace_source_set_context
 
         with measure() as context_timer:
-            source_set_id = workspace.source_sets.get(source_set_key).source_set_id if source_set_key else None
+            source_set_id = (
+                workspace.source_sets.get(source_set_key).source_set_id
+                if source_set_key
+                else None
+            )
             context = build_workspace_source_set_context(
                 source_set_id,
                 workspace=workspace,
@@ -516,12 +542,14 @@ class FaissIndexingService:
             logger,
             level=logging.INFO,
             message="Prepared workspace shared context",
-            source_roots=len({
-                str(Path(root).resolve())
-                for source_set in workspace.source_sets.values()
-                for root in source_set.all_roots
-                if Path(root).exists()
-            }),
+            source_roots=len(
+                {
+                    str(Path(root).resolve())
+                    for source_set in workspace.source_sets.values()
+                    for root in source_set.all_roots
+                    if Path(root).exists()
+                }
+            ),
             duration_ms=context_timer.elapsed_ms,
         )
         return context
@@ -594,7 +622,19 @@ def _release_accelerator_memory() -> None:
     except ImportError:
         return
 
-    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-        torch.mps.empty_cache()
-    if hasattr(torch, "cuda") and hasattr(torch.cuda, "empty_cache"):
-        torch.cuda.empty_cache()
+    _empty_backend_cache(getattr(torch, "mps", None))
+    _empty_backend_cache(getattr(torch, "cuda", None))
+
+
+def _empty_backend_cache(backend) -> None:
+    if backend is None or not hasattr(backend, "empty_cache"):
+        return
+
+    is_available = getattr(backend, "is_available", None)
+    if callable(is_available) and not is_available():
+        return
+
+    try:
+        backend.empty_cache()
+    except RuntimeError:
+        return

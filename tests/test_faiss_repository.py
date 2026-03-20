@@ -44,7 +44,9 @@ def _db():
         with Session(engine) as session:
             yield session
 
-    with patch("codelens.indexing.faiss_repository.get_session", side_effect=_test_session):
+    with patch(
+        "codelens.indexing.faiss_repository.get_session", side_effect=_test_session
+    ):
         yield
 
 
@@ -171,7 +173,9 @@ def test_faiss_repository_checkpoints_workspace_shards_and_resume_state(tmp_path
     assert retained[0][1][0] == pytest.approx([0.1, 0.2])
 
 
-def test_faiss_repository_retries_interrupted_workspace_file_without_duplicate_chunks(tmp_path):
+def test_faiss_repository_retries_interrupted_workspace_file_without_duplicate_chunks(
+    tmp_path,
+):
     fake_faiss = _FakeFaiss()
     repository = FaissIndexRepository(tmp_path, faiss_module=fake_faiss)
 

@@ -8,6 +8,7 @@ from codelens.db.constants import DB_URL, PRAGMA_FOREIGN_KEYS, PRAGMA_WAL_MODE
 
 engine = create_engine(DB_URL)
 
+
 @event.listens_for(engine, "connect")
 def _set_sqlite_params(dbapi_connection, connection_record):
     cursor = dbapi_connection.cursor()

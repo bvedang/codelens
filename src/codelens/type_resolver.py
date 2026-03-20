@@ -42,9 +42,9 @@ class ImportContext:
     wildcard_imports: tuple[str, ...]
 
     @classmethod
-    def from_declarations(cls,
-                          package_declaration: str | None,
-                          imports: Iterable[str]) -> "ImportContext":
+    def from_declarations(
+        cls, package_declaration: str | None, imports: Iterable[str]
+    ) -> "ImportContext":
         explicit_imports: dict[str, str] = {}
         wildcard_imports: list[str] = []
 
@@ -142,15 +142,17 @@ class TypeResolver:
     def __init__(self, type_index: TypeIndex | None = None):
         self.type_index = type_index or TypeIndex.empty()
 
-    def build_import_context(self,
-                             package_declaration: str | None,
-                             imports: Iterable[str]) -> ImportContext:
+    def build_import_context(
+        self, package_declaration: str | None, imports: Iterable[str]
+    ) -> ImportContext:
         return ImportContext.from_declarations(package_declaration, imports)
 
-    def resolve_type_reference(self,
-                               type_name: str | None,
-                               import_context: ImportContext | None,
-                               local_types: Mapping[str, str] | None = None) -> TypeResolution:
+    def resolve_type_reference(
+        self,
+        type_name: str | None,
+        import_context: ImportContext | None,
+        local_types: Mapping[str, str] | None = None,
+    ) -> TypeResolution:
         if type_name is None:
             return TypeResolution(None, None, "empty")
 
@@ -206,13 +208,15 @@ class TypeResolver:
             None,
             "ambiguous",
             candidates=tuple(
-                sorted(_with_suffix(candidate, suffix) for candidate in candidate_sources)
+                sorted(
+                    _with_suffix(candidate, suffix) for candidate in candidate_sources
+                )
             ),
         )
 
-    def _resolve_same_package(self,
-                              simple_name: str,
-                              import_context: ImportContext | None) -> str | None:
+    def _resolve_same_package(
+        self, simple_name: str, import_context: ImportContext | None
+    ) -> str | None:
         if not import_context or not import_context.package_name:
             return None
 
@@ -225,9 +229,9 @@ class TypeResolver:
             return matches[0]
         return None
 
-    def _resolve_wildcard_imports(self,
-                                  simple_name: str,
-                                  import_context: ImportContext | None) -> tuple[str, ...]:
+    def _resolve_wildcard_imports(
+        self, simple_name: str, import_context: ImportContext | None
+    ) -> tuple[str, ...]:
         if not import_context:
             return ()
 

@@ -1,5 +1,6 @@
 import json
 import logging
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
@@ -10,7 +11,11 @@ from sqlmodel import Session, SQLModel, create_engine
 import codelens.workspace_runtime as workspace_runtime
 from codelens.indexing.encoder import LateInteractionEncoder
 from codelens.indexing.faiss_repository import FaissIndexRepository
-from codelens.indexing.service import FaissIndexingService, _workspace_signature
+from codelens.indexing.service import (
+    FaissIndexingService,
+    _release_accelerator_memory,
+    _workspace_signature,
+)
 
 
 class _FakeIndex:
@@ -54,10 +59,7 @@ class _FakeEncoder(LateInteractionEncoder):
         self.prepare_calls += 1
 
     def embed_documents(self, texts):
-        return [
-            [[float(index + 1), float(index + 2)]]
-            for index, _ in enumerate(texts)
-        ]
+        return [[[float(index + 1), float(index + 2)]] for index, _ in enumerate(texts)]
 
 
 class _SplittingEncoder(LateInteractionEncoder):
@@ -108,7 +110,9 @@ def _db():
         with Session(engine) as session:
             yield session
 
-    with patch("codelens.indexing.faiss_repository.get_session", side_effect=_test_session):
+    with patch(
+        "codelens.indexing.faiss_repository.get_session", side_effect=_test_session
+    ):
         yield
 
 
@@ -134,7 +138,9 @@ class OrderService {
                 "schema_version": 1,
                 "source_sets": {
                     ":app:main": {
-                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "main" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
@@ -183,7 +189,9 @@ class OrderService {
                 "schema_version": 1,
                 "source_sets": {
                     ":app:main": {
-                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "main" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
@@ -211,13 +219,11 @@ class OrderService {
     assert any("Indexed workspace file" in message for message in messages)
     assert any("Workspace indexing finished" in message for message in messages)
     assert any(
-        "Prepared workspace shared context |" in message
-        and "duration_ms=" in message
+        "Prepared workspace shared context |" in message and "duration_ms=" in message
         for message in messages
     )
     assert any(
-        "Prepared workspace resolver context |" in message
-        and "duration_ms=" in message
+        "Prepared workspace resolver context |" in message and "duration_ms=" in message
         for message in messages
     )
     assert any(
@@ -308,14 +314,18 @@ class MainOnlyTest {
                 "schema_version": 1,
                 "source_sets": {
                     ":app:main": {
-                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "main" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
                         "external_binary_entries": [],
                     },
                     ":app:test": {
-                        "source_roots": [str((repo_root / "app" / "src" / "test" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "test" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
@@ -332,7 +342,9 @@ class MainOnlyTest {
     service = FaissIndexingService(repository, encoder)
 
     with caplog.at_level(logging.INFO):
-        result = service.index_workspace(repo_root=repo_root, workspace_json=workspace_json)
+        result = service.index_workspace(
+            repo_root=repo_root, workspace_json=workspace_json
+        )
 
     assert result.files_indexed == 1
     retained = repository.entries_with_vectors()
@@ -351,7 +363,10 @@ class MainOnlyTest {
         and "deferred_files=1" in message
         for message in messages
     )
-    assert any("Building workspace-wide source index for 1 roots" in message for message in messages)
+    assert any(
+        "Building workspace-wide source index for 1 roots" in message
+        for message in messages
+    )
 
 
 def test_faiss_service_reuses_workspace_context_per_source_set(tmp_path, monkeypatch):
@@ -377,7 +392,9 @@ class {name[:-5]} {{
                 "schema_version": 1,
                 "source_sets": {
                     ":app:main": {
-                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "main" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
@@ -403,8 +420,12 @@ class {name[:-5]} {{
         shared_calls += 1
         return original_shared(**kwargs)
 
-    monkeypatch.setattr(workspace_runtime, "build_workspace_source_set_context", _record_build)
-    monkeypatch.setattr(workspace_runtime, "build_workspace_shared_context", _record_shared)
+    monkeypatch.setattr(
+        workspace_runtime, "build_workspace_source_set_context", _record_build
+    )
+    monkeypatch.setattr(
+        workspace_runtime, "build_workspace_shared_context", _record_shared
+    )
 
     repository = FaissIndexRepository(repo_root, faiss_module=_FakeFaiss())
     encoder = _FakeEncoder()
@@ -454,14 +475,18 @@ class MainOnlyTest {
                 "schema_version": 1,
                 "source_sets": {
                     ":app:main": {
-                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "main" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
                         "external_binary_entries": [],
                     },
                     ":app:test": {
-                        "source_roots": [str((repo_root / "app" / "src" / "test" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "test" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
@@ -477,7 +502,9 @@ class MainOnlyTest {
     encoder = _FakeEncoder()
     service = FaissIndexingService(repository, encoder)
 
-    workspace_result = service.index_workspace(repo_root=repo_root, workspace_json=workspace_json)
+    workspace_result = service.index_workspace(
+        repo_root=repo_root, workspace_json=workspace_json
+    )
     file_result = service.index_file(
         test_file,
         repo_root=repo_root,
@@ -530,7 +557,9 @@ class Refresh {
                 "schema_version": 1,
                 "source_sets": {
                     ":app:main": {
-                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "main" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
@@ -611,7 +640,9 @@ class Refresh {
                 "schema_version": 1,
                 "source_sets": {
                     ":app:main": {
-                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "source_roots": [
+                            str((repo_root / "app" / "src" / "main" / "java").resolve())
+                        ],
                         "generated_source_roots": [],
                         "project_dependencies": [],
                         "external_jars": [],
@@ -639,7 +670,7 @@ class Refresh {
                 "file_path": "app/src/main/java/com/app/Keep.java",
                 "chunk_kind": "method",
                 "retrieval_text": "[method] ...",
-                "source_text": "void keep() { System.out.println(\"keep\"); }",
+                "source_text": 'void keep() { System.out.println("keep"); }',
             }
         ],
         vectors=[[[0.1, 0.2]]],
@@ -734,3 +765,37 @@ class Large {
     assert encoder.prepare_calls == 1
     assert any(batch_size > 1 for batch_size in encoder.batch_sizes)
     assert encoder.batch_sizes[-1] == 1
+
+
+def test_release_accelerator_memory_skips_unavailable_mps(monkeypatch):
+    class _FakeMps:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def is_available(self) -> bool:
+            return False
+
+        def empty_cache(self) -> None:
+            self.calls += 1
+            raise AssertionError("empty_cache should not run when MPS is unavailable")
+
+    class _FakeCuda:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def is_available(self) -> bool:
+            return True
+
+        def empty_cache(self) -> None:
+            self.calls += 1
+
+    fake_torch = type("FakeTorch", (), {})()
+    fake_torch.mps = _FakeMps()
+    fake_torch.cuda = _FakeCuda()
+
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    _release_accelerator_memory()
+
+    assert fake_torch.mps.calls == 0
+    assert fake_torch.cuda.calls == 1

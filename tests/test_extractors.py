@@ -52,7 +52,9 @@ def test_extract_modifiers_excludes_annotations():
 
 
 def test_extract_modifiers_multiple_annotations_only_keywords():
-    code = b'class X { @SuppressWarnings("all") @Deprecated public static void old() {} }'
+    code = (
+        b'class X { @SuppressWarnings("all") @Deprecated public static void old() {} }'
+    )
     node = _find_node(_parse(code).root_node, "method_declaration")
     assert extract_modifiers(code, node) == ["public", "static"]
 
@@ -108,7 +110,7 @@ def test_should_skip_behavior_child_for_throw_new_without_anonymous_body():
 
 def test_should_skip_behavior_child_keeps_throw_new_with_anonymous_body():
     code = (
-        b'class X { void fail() { throw new RuntimeException() '
+        b"class X { void fail() { throw new RuntimeException() "
         b'{ public String getMessage() { return "x"; } }; } }'
     )
     parent = _find_node(_parse(code).root_node, "throw_statement")

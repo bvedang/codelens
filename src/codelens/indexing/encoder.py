@@ -11,14 +11,11 @@ logger = get_logger(__name__)
 
 class LateInteractionEncoder(Protocol):
     @property
-    def model_name(self) -> str:
-        ...
+    def model_name(self) -> str: ...
 
-    def prepare(self) -> None:
-        ...
+    def prepare(self) -> None: ...
 
-    def embed_documents(self, texts: Sequence[str]) -> list[list[list[float]]]:
-        ...
+    def embed_documents(self, texts: Sequence[str]) -> list[list[list[float]]]: ...
 
 
 class ColbertEncoder:
@@ -121,9 +118,7 @@ class ColbertEncoder:
             try:
                 from pylate import models
             except ImportError as exc:
-                raise RuntimeError(
-                    "pylate is required for ColBERT encoding"
-                ) from exc
+                raise RuntimeError("pylate is required for ColBERT encoding") from exc
             self._model = models.ColBERT(
                 model_name_or_path=self._model_name,
                 device=self._device,
@@ -138,6 +133,8 @@ class ColbertEncoder:
                 device=self._device or "default",
             )
         return self._model
+
+
 def _configure_tqdm_lock() -> None:
     try:
         from tqdm import tqdm

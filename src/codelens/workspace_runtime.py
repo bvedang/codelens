@@ -57,12 +57,14 @@ def build_workspace_shared_context(
         workspace_json=workspace_json,
     )
 
-    all_roots = sorted({
-        str(Path(root).resolve())
-        for source_set in workspace.source_sets.values()
-        for root in source_set.all_roots
-        if Path(root).exists()
-    })
+    all_roots = sorted(
+        {
+            str(Path(root).resolve())
+            for source_set in workspace.source_sets.values()
+            for root in source_set.all_roots
+            if Path(root).exists()
+        }
+    )
     logger.info("Building workspace-wide source index for %d roots", len(all_roots))
     source_index = cache.get_source_index(
         [Path(root) for root in all_roots],
@@ -70,8 +72,10 @@ def build_workspace_shared_context(
         context_token=workspace_cache_token,
     )
 
-    resolved_jdk_home = Path(jdk_home) if jdk_home is not None else (
-        Path(workspace.jdk_home) if workspace.jdk_home else None
+    resolved_jdk_home = (
+        Path(jdk_home)
+        if jdk_home is not None
+        else (Path(workspace.jdk_home) if workspace.jdk_home else None)
     )
     jdk_index = None
     if resolved_jdk_home is not None and resolved_jdk_home.exists():
@@ -113,13 +117,17 @@ def build_workspace_source_set_context(
     )
     visible_roots = [
         Path(root)
-        for root in (workspace.visible_source_roots(source_set_id) if source_set_id else ())
+        for root in (
+            workspace.visible_source_roots(source_set_id) if source_set_id else ()
+        )
         if Path(root).exists()
     ]
     logger.info("Resolved %d visible source roots", len(visible_roots))
     source_index = shared_context.source_index
 
-    logger.info("Resolved source set: %s", source_set_id.key if source_set_id else "unmapped")
+    logger.info(
+        "Resolved source set: %s", source_set_id.key if source_set_id else "unmapped"
+    )
     binary_index = None
     if resolve_binaries and source_set_id is not None:
         binary_paths = [

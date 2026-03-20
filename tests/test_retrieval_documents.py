@@ -35,7 +35,10 @@ class OrderService {
     assert field_document.package_name == "com.app.orders"
     assert field_document.repo_root == "/repo"
     assert field_document.field_type == "PaymentGateway"
-    assert "resolved_symbols com.app.payments.PaymentGateway.charge" in method_document.retrieval_text
+    assert (
+        "resolved_symbols com.app.payments.PaymentGateway.charge"
+        in method_document.retrieval_text
+    )
     assert method_document.signature == "void placeOrder()"
     assert method_document.source_set == ":orders:main"
 

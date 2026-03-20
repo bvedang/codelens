@@ -8,14 +8,14 @@ from pathlib import Path
 from codelens.db.session import init_db
 from codelens.indexing import (
     ColbertEncoder,
-    FaissIndexRepository,
     FaissIndexingService,
+    FaissIndexRepository,
 )
 from codelens.logging_config import configure_logging, get_logger, log_event
 
 logger = get_logger(__name__)
 
-DEMO_CODE = b'''
+DEMO_CODE = b"""
 package com.app.orders;
 
 import com.app.models.Order;
@@ -88,7 +88,7 @@ public class OrderService {
         orderRepo.save(order);
     }
 }
-'''
+"""
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -103,7 +103,9 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _run_index_cli(argv: list[str]) -> None:
-    cli = argparse.ArgumentParser(description="Build and inspect the local CodeLens index.")
+    cli = argparse.ArgumentParser(
+        description="Build and inspect the local CodeLens index."
+    )
     cli.add_argument(
         "-v",
         "--verbose",
@@ -113,7 +115,9 @@ def _run_index_cli(argv: list[str]) -> None:
     )
     subparsers = cli.add_subparsers(dest="index_command", required=True)
 
-    workspace_parser = subparsers.add_parser("workspace", help="Rebuild the workspace index.")
+    workspace_parser = subparsers.add_parser(
+        "workspace", help="Rebuild the workspace index."
+    )
     workspace_parser.add_argument("--repo-root", required=True)
     workspace_parser.add_argument("--workspace-json", required=True)
     workspace_parser.add_argument("--resolve-binaries", action="store_true")
@@ -121,7 +125,9 @@ def _run_index_cli(argv: list[str]) -> None:
     workspace_parser.add_argument("--batch-size", type=int, default=32)
     workspace_parser.add_argument("--device")
 
-    file_parser = subparsers.add_parser("file", help="Refresh a single file in the local index.")
+    file_parser = subparsers.add_parser(
+        "file", help="Refresh a single file in the local index."
+    )
     file_parser.add_argument("--repo-root", required=True)
     file_parser.add_argument("--file", required=True)
     file_parser.add_argument("--workspace-json", required=True)
@@ -209,7 +215,9 @@ def _run_parse_cli(argv: list[str]) -> None:
     from codelens.type_resolver import TypeResolver
     from codelens.workspace_runtime import build_workspace_resolver_context
 
-    cli = argparse.ArgumentParser(description="Parse Java and print chunk/debug output.")
+    cli = argparse.ArgumentParser(
+        description="Parse Java and print chunk/debug output."
+    )
     cli.add_argument(
         "-v",
         "--verbose",
@@ -299,7 +307,9 @@ def _run_parse_cli(argv: list[str]) -> None:
         print(f"source_set     : {source_set_id.key if source_set_id else '—'}")
         print(f"workspace_jdk  : {demo_workspace.jdk_home or '—'}")
         if source_set_id is not None:
-            visible_source_sets = [item.key for item in demo_workspace.visible_source_sets(source_set_id)]
+            visible_source_sets = [
+                item.key for item in demo_workspace.visible_source_sets(source_set_id)
+            ]
             print(f"visible_sets   : {len(visible_source_sets)}")
             for item in visible_source_sets[:10]:
                 print(f"  - {item}")
@@ -308,7 +318,9 @@ def _run_parse_cli(argv: list[str]) -> None:
             visible_jars = demo_workspace.visible_external_jars(source_set_id)
             print(f"visible_jars   : {len(visible_jars)}")
         if demo_jdk_index is not None:
-            print(f"jdk_types      : {len(demo_jdk_index.qualified_names(origin_kind='jdk'))}")
+            print(
+                f"jdk_types      : {len(demo_jdk_index.qualified_names(origin_kind='jdk'))}"
+            )
 
         imported_types = []
         for import_decl in demo_file_ctx.get("imports", []):
@@ -320,8 +332,12 @@ def _run_parse_cli(argv: list[str]) -> None:
         if imported_types:
             print("resolved_imports:")
             for type_name in imported_types[:12]:
-                resolution = demo_resolver.resolve_type_reference(type_name, import_context)
-                print(f"  - {type_name} -> {resolution.best_name()} [{resolution.strategy}]")
+                resolution = demo_resolver.resolve_type_reference(
+                    type_name, import_context
+                )
+                print(
+                    f"  - {type_name} -> {resolution.best_name()} [{resolution.strategy}]"
+                )
         print()
 
     print("=" * 70)
@@ -346,7 +362,9 @@ def _run_parse_cli(argv: list[str]) -> None:
             print(f"  return_type    : {chunk.get('return_type')}")
             print(f"  parameters     : {chunk.get('parameters')}")
             for annotation in chunk.get("annotations", []):
-                print(f"  annotation     : {annotation['text']}  attrs={annotation.get('attributes', {})}")
+                print(
+                    f"  annotation     : {annotation['text']}  attrs={annotation.get('attributes', {})}"
+                )
             print(f"  modifiers      : {chunk.get('modifiers')}")
             print(f"  throws         : {chunk.get('throws')}")
             print(f"  calls          : {chunk.get('calls')}")
@@ -359,7 +377,9 @@ def _run_parse_cli(argv: list[str]) -> None:
             print(f"  extends     : {chunk.get('extends')}")
             print(f"  implements  : {chunk.get('implements')}")
             for annotation in chunk.get("annotations", []):
-                print(f"  annotation  : {annotation['text']}  attrs={annotation.get('attributes', {})}")
+                print(
+                    f"  annotation  : {annotation['text']}  attrs={annotation.get('attributes', {})}"
+                )
             print(f"  is_exception: {chunk.get('is_exception')}")
         elif kind == "field":
             print(f"  field_type  : {chunk.get('field_type')}")

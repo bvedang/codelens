@@ -12,7 +12,9 @@ def build_retrieval_documents(
     source_set: str | None = None,
 ) -> list[RetrievalDocument]:
     chunk_list = list(chunks)
-    file_chunk = next((chunk for chunk in chunk_list if chunk.get("kind") == "file"), None)
+    file_chunk = next(
+        (chunk for chunk in chunk_list if chunk.get("kind") == "file"), None
+    )
     documents = []
     for chunk in chunk_list:
         if chunk.get("kind") == "file":

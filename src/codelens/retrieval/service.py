@@ -11,8 +11,9 @@ from codelens.workspace_runtime import parse_java_file_with_workspace
 
 
 class RetrievalIndexingService:
-
-    def index_chunks(self, chunks: list[dict], *, source_set: str | None = None) -> list[RetrievalDocument]:
+    def index_chunks(
+        self, chunks: list[dict], *, source_set: str | None = None
+    ) -> list[RetrievalDocument]:
         documents = build_retrieval_documents(chunks, source_set=source_set)
         with get_session() as session:
             upsert_documents(session, documents)
