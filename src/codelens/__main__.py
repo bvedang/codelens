@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
-from codelens.chunker import annotation_texts, file_context, parse_java
+from codelens.db.session import init_db
 from codelens.indexing import (
     ColbertEncoder,
     FaissIndexRepository,
     FaissIndexingService,
 )
-from codelens.logging_config import configure_logging, get_logger
-from codelens.parser import JAVA_PARSER
-from codelens.symbol_index import build_jdk_symbol_index
-from codelens.type_resolver import TypeResolver
-from codelens.workspace_runtime import build_workspace_resolver_context
+from codelens.logging_config import configure_logging, get_logger, log_event
 
 logger = get_logger(__name__)
 
@@ -138,6 +135,7 @@ def _run_index_cli(argv: list[str]) -> None:
 
     args = cli.parse_args(argv)
     configure_logging(args.verbose)
+    init_db()
 
     repo_root = Path(args.repo_root).resolve()
     repository = FaissIndexRepository(repo_root)
@@ -154,27 +152,50 @@ def _run_index_cli(argv: list[str]) -> None:
         print(f"model      : {status.model_name or '-'}")
         return
 
-    service = FaissIndexingService(
-        repository,
-        ColbertEncoder(device=args.device),
-        batch_size=args.batch_size,
-    )
-    if args.index_command == "workspace":
-        result = service.index_workspace(
-            repo_root=repo_root,
-            workspace_json=args.workspace_json,
-            resolve_binaries=args.resolve_binaries,
-            jdk_home=args.jdk_home,
+    encoder = ColbertEncoder(device=args.device)
+    try:
+        service = FaissIndexingService(
+            repository,
+            encoder,
+            batch_size=args.batch_size,
         )
-    else:
-        result = service.index_file(
-            args.file,
+        log_event(
+            logger,
+            level=logging.INFO,
+            message="Starting index command",
+            command=args.index_command,
             repo_root=repo_root,
-            workspace_json=args.workspace_json,
-            resolve_binaries=args.resolve_binaries,
-            jdk_home=args.jdk_home,
+            batch_size=args.batch_size,
+            device=args.device or "default",
         )
+        if args.index_command == "workspace":
+            result = service.index_workspace(
+                repo_root=repo_root,
+                workspace_json=args.workspace_json,
+                resolve_binaries=args.resolve_binaries,
+                jdk_home=args.jdk_home,
+            )
+        else:
+            result = service.index_file(
+                args.file,
+                repo_root=repo_root,
+                workspace_json=args.workspace_json,
+                resolve_binaries=args.resolve_binaries,
+                jdk_home=args.jdk_home,
+            )
+    finally:
+        encoder.close()
 
+    log_event(
+        logger,
+        level=logging.INFO,
+        message="Index command completed",
+        command=args.index_command,
+        repo_root=result.repo_root,
+        files_indexed=result.files_indexed,
+        documents_indexed=result.documents_indexed,
+        failures=result.failures,
+    )
     print(f"repo_root        : {result.repo_root}")
     print(f"files_indexed    : {result.files_indexed}")
     print(f"documents_indexed: {result.documents_indexed}")
@@ -182,6 +203,12 @@ def _run_index_cli(argv: list[str]) -> None:
 
 
 def _run_parse_cli(argv: list[str]) -> None:
+    from codelens.chunker import annotation_texts, file_context, parse_java
+    from codelens.parser import JAVA_PARSER
+    from codelens.symbol_index import build_jdk_symbol_index
+    from codelens.type_resolver import TypeResolver
+    from codelens.workspace_runtime import build_workspace_resolver_context
+
     cli = argparse.ArgumentParser(description="Parse Java and print chunk/debug output.")
     cli.add_argument(
         "-v",

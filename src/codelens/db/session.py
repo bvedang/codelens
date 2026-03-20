@@ -3,6 +3,7 @@ from contextlib import contextmanager
 from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine
 
+from codelens.db import schema as _schema
 from codelens.db.constants import DB_URL, PRAGMA_FOREIGN_KEYS, PRAGMA_WAL_MODE
 
 engine = create_engine(DB_URL)
