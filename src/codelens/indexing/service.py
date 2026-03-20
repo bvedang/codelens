@@ -1,19 +1,17 @@
 from __future__ import annotations
 
 import gc
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha1
 from pathlib import Path
 
-from codelens.chunker import parse_java
 from codelens.gradle_model import GradleWorkspaceModel
 from codelens.indexing.documents import build_index_documents, document_payload
 from codelens.indexing.encoder import LateInteractionEncoder
 from codelens.indexing.faiss_repository import FaissIndexRepository, MetadataCorruptionError
-from codelens.indexing.locking import IndexLock
-from codelens.logging_config import get_logger
-from codelens.workspace_runtime import parse_java_file_with_workspace
+from codelens.logging_config import get_logger, log_event
 
 logger = get_logger(__name__)
 
@@ -52,21 +50,31 @@ class FaissIndexingService:
         workspace_signature = _workspace_signature(filepaths)
         indexed_at = _indexed_at()
 
-        with IndexLock(self._repository.lock_path):
-            state = self._repository.start_workspace_build(
-                filepaths=filepaths,
-                workspace_signature=workspace_signature,
-                model_name=self._encoder.model_name,
-                indexed_at=indexed_at,
-            )
-            return self._index_workspace_locked(
-                repo_root=normalized_repo_root,
-                workspace=workspace,
-                filepaths=filepaths,
-                state=state,
-                resolve_binaries=resolve_binaries,
-                jdk_home=jdk_home,
-            )
+        log_event(
+            logger,
+            level=logging.INFO,
+            message="Preparing workspace index",
+            repo_root=normalized_repo_root,
+            files=len(filepaths),
+            batch_size=self._batch_size,
+            model=self._encoder.model_name,
+        )
+        self._prepare_encoder()
+
+        state = self._repository.start_workspace_build(
+            filepaths=filepaths,
+            workspace_signature=workspace_signature,
+            model_name=self._encoder.model_name,
+            indexed_at=indexed_at,
+        )
+        return self._index_workspace_locked(
+            repo_root=normalized_repo_root,
+            workspace=workspace,
+            filepaths=filepaths,
+            state=state,
+            resolve_binaries=resolve_binaries,
+            jdk_home=jdk_home,
+        )
 
     def index_file(
         self,
@@ -85,48 +93,58 @@ class FaissIndexingService:
         indexed_at = _indexed_at()
         relative_file_path = file_path.relative_to(Path(normalized_repo_root)).as_posix()
 
+        log_event(
+            logger,
+            level=logging.INFO,
+            message="Refreshing indexed file",
+            repo_root=normalized_repo_root,
+            file=relative_file_path,
+            batch_size=self._batch_size,
+            model=self._encoder.model_name,
+        )
+        self._prepare_encoder()
+
         workspace = (
             GradleWorkspaceModel.from_json_file(workspace_json)
             if workspace_json is not None
             else None
         )
 
-        with IndexLock(self._repository.lock_path):
-            try:
-                retained = self._repository.entries_with_vectors(
-                    exclude_file_path=relative_file_path,
-                )
-            except MetadataCorruptionError:
-                if workspace is None:
-                    raise
-                logger.error("Stored metadata is corrupted; forcing full workspace rebuild")
-                return self._index_workspace_locked(
-                    repo_root=normalized_repo_root,
-                    workspace=workspace,
-                    indexed_at=indexed_at,
-                    resolve_binaries=resolve_binaries,
-                    jdk_home=jdk_home,
-                )
-
-            documents = self._parse_index_documents(
-                file_path,
+        try:
+            retained = self._repository.entries_with_vectors(
+                exclude_file_path=relative_file_path,
+            )
+        except MetadataCorruptionError:
+            if workspace is None:
+                raise
+            logger.error("Stored metadata is corrupted; forcing full workspace rebuild")
+            return self._index_workspace_locked(
                 repo_root=normalized_repo_root,
-                indexed_at=indexed_at,
                 workspace=workspace,
+                indexed_at=indexed_at,
                 resolve_binaries=resolve_binaries,
                 jdk_home=jdk_home,
             )
-            new_vectors = self._embed_documents(documents)
-            entries = [payload for payload, _ in retained]
-            vectors = [matrix for _, matrix in retained]
-            entries.extend(document_payload(document) for document in documents)
-            vectors.extend(new_vectors)
-            self._repository.save(
-                entries=entries,
-                vectors=vectors,
-                model_name=self._encoder.model_name,
-                indexed_at=indexed_at,
-            )
+
+        documents = self._parse_index_documents(
+            file_path,
+            repo_root=normalized_repo_root,
+            indexed_at=indexed_at,
+            workspace=workspace,
+            resolve_binaries=resolve_binaries,
+            jdk_home=jdk_home,
+        )
+        new_vectors = self._embed_documents(documents)
+        entries = [payload for payload, _ in retained]
+        vectors = [matrix for _, matrix in retained]
+        entries.extend(document_payload(document) for document in documents)
+        vectors.extend(new_vectors)
+        self._repository.save(
+            entries=entries,
+            vectors=vectors,
+            model_name=self._encoder.model_name,
+            indexed_at=indexed_at,
+        )
 
         return IndexingResult(
             repo_root=normalized_repo_root,
@@ -145,8 +163,18 @@ class FaissIndexingService:
         jdk_home: str | Path | None,
     ) -> IndexingResult:
         completed_files = set(state.completed_files)
+        total_files = len(filepaths)
 
-        for filepath in filepaths:
+        log_event(
+            logger,
+            level=logging.INFO,
+            message="Workspace indexing started",
+            repo_root=repo_root,
+            total_files=total_files,
+            already_completed=len(completed_files),
+        )
+
+        for index, filepath in enumerate(filepaths, start=1):
             if filepath in completed_files:
                 continue
             try:
@@ -164,6 +192,14 @@ class FaissIndexingService:
                     entries=[document_payload(document) for document in documents],
                     vectors=vectors,
                 )
+                self._log_workspace_progress(
+                    repo_root=repo_root,
+                    filepath=filepath,
+                    current=index,
+                    total=total_files,
+                    documents_in_file=len(documents),
+                    documents_indexed=state.documents_indexed,
+                )
             except Exception as exc:
                 state = self._repository.mark_workspace_file_failed(
                     workspace_file=filepath,
@@ -173,6 +209,15 @@ class FaissIndexingService:
                 continue
 
         state = self._repository.complete_workspace_build()
+        log_event(
+            logger,
+            level=logging.INFO,
+            message="Workspace indexing finished",
+            repo_root=repo_root,
+            completed_files=len(state.completed_files),
+            failed_files=len(state.failed_files),
+            documents_indexed=state.documents_indexed,
+        )
         return IndexingResult(
             repo_root=repo_root,
             files_indexed=len(state.completed_files),
@@ -191,6 +236,8 @@ class FaissIndexingService:
         jdk_home: str | Path | None,
     ):
         if workspace is not None:
+            from codelens.workspace_runtime import parse_java_file_with_workspace
+
             chunks, context = parse_java_file_with_workspace(
                 filepath,
                 workspace=workspace,
@@ -199,6 +246,8 @@ class FaissIndexingService:
             )
             source_set = context.source_set_id.key if context.source_set_id else None
         else:
+            from codelens.chunker import parse_java
+
             chunks = parse_java(filepath.read_bytes(), filepath=str(filepath))
             source_set = None
         return build_index_documents(
@@ -246,6 +295,43 @@ class FaissIndexingService:
                     if filepath.is_file():
                         files.add(str(filepath.resolve()))
         return sorted(files)
+
+    def _prepare_encoder(self) -> None:
+        log_event(
+            logger,
+            level=logging.INFO,
+            message="Preloading encoder model",
+            model=self._encoder.model_name,
+        )
+        self._encoder.prepare()
+
+    def _log_workspace_progress(
+        self,
+        *,
+        repo_root: str,
+        filepath: str,
+        current: int,
+        total: int,
+        documents_in_file: int,
+        documents_indexed: int,
+    ) -> None:
+        if logger.isEnabledFor(logging.DEBUG):
+            level = logging.DEBUG
+        elif current == total or current == 1 or current % 25 == 0:
+            level = logging.INFO
+        else:
+            return
+
+        relative_path = Path(filepath).relative_to(Path(repo_root)).as_posix()
+        log_event(
+            logger,
+            level=level,
+            message="Indexed workspace file",
+            progress=f"{current}/{total}",
+            file=relative_path,
+            documents_in_file=documents_in_file,
+            documents_indexed=documents_indexed,
+        )
 
 
 def _indexed_at() -> str:

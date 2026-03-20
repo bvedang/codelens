@@ -1,5 +1,7 @@
 import json
+import logging
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -32,15 +34,23 @@ class _FakeFaiss:
 
     def write_index(self, index, path):
         self.saved[path] = index
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text("fake-faiss-index", encoding="utf-8")
 
     def read_index(self, path):
         return self.saved[path]
 
 
 class _FakeEncoder(LateInteractionEncoder):
+    def __init__(self) -> None:
+        self.prepare_calls = 0
+
     @property
     def model_name(self) -> str:
         return "ColBERT-Zero-supervised"
+
+    def prepare(self) -> None:
+        self.prepare_calls += 1
 
     def embed_documents(self, texts):
         return [
@@ -52,10 +62,14 @@ class _FakeEncoder(LateInteractionEncoder):
 class _SplittingEncoder(LateInteractionEncoder):
     def __init__(self) -> None:
         self.batch_sizes: list[int] = []
+        self.prepare_calls = 0
 
     @property
     def model_name(self) -> str:
         return "ColBERT-Zero-supervised"
+
+    def prepare(self) -> None:
+        self.prepare_calls += 1
 
     def embed_documents(self, texts):
         self.batch_sizes.append(len(texts))
@@ -113,16 +127,68 @@ class OrderService {
     )
 
     repository = FaissIndexRepository(repo_root, faiss_module=_FakeFaiss())
-    service = FaissIndexingService(repository, _FakeEncoder())
+    encoder = _FakeEncoder()
+    service = FaissIndexingService(repository, encoder)
 
     result = service.index_workspace(repo_root=repo_root, workspace_json=workspace_json)
 
     assert result.files_indexed == 1
     assert result.documents_indexed >= 2
+    assert encoder.prepare_calls == 1
     status = repository.status()
     assert status is not None
     assert status.chunk_count == result.documents_indexed
     assert status.model_name == "ColBERT-Zero-supervised"
+
+
+def test_faiss_service_logs_workspace_progress(tmp_path, caplog):
+    repo_root = tmp_path / "repo"
+    source_root = repo_root / "app" / "src" / "main" / "java" / "com" / "app"
+    source_root.mkdir(parents=True)
+    (source_root / "OrderService.java").write_text(
+        """package com.app;
+
+class OrderService {
+    void placeOrder() {
+        System.out.println("ok");
+    }
+}
+""",
+        encoding="utf-8",
+    )
+    workspace_json = repo_root / "workspace.json"
+    workspace_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "source_sets": {
+                    ":app:main": {
+                        "source_roots": [str((repo_root / "app" / "src" / "main" / "java").resolve())],
+                        "generated_source_roots": [],
+                        "project_dependencies": [],
+                        "external_jars": [],
+                        "external_binary_entries": [],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    repository = FaissIndexRepository(repo_root, faiss_module=_FakeFaiss())
+    encoder = _FakeEncoder()
+    service = FaissIndexingService(repository, encoder)
+
+    with caplog.at_level(logging.INFO, logger="codelens.indexing.service"):
+        service.index_workspace(repo_root=repo_root, workspace_json=workspace_json)
+
+    messages = [record.message for record in caplog.records]
+    assert any("Preparing workspace index" in message for message in messages)
+    assert any("Preloading encoder model" in message for message in messages)
+    assert any("Workspace indexing started" in message for message in messages)
+    assert any("Indexed workspace file" in message for message in messages)
+    assert any("Workspace indexing finished" in message for message in messages)
+    assert encoder.prepare_calls == 1
 
 
 def test_faiss_service_refreshes_single_file_by_rebuilding_retained_vectors(tmp_path):
@@ -173,7 +239,8 @@ class Refresh {
     )
 
     repository = FaissIndexRepository(repo_root, faiss_module=_FakeFaiss())
-    service = FaissIndexingService(repository, _FakeEncoder())
+    encoder = _FakeEncoder()
+    service = FaissIndexingService(repository, encoder)
     service.index_workspace(repo_root=repo_root, workspace_json=workspace_json)
 
     refresh_file.write_text(
@@ -195,6 +262,7 @@ class Refresh {
     )
 
     assert result.files_indexed == 1
+    assert encoder.prepare_calls == 2
     retained = repository.entries_with_vectors()
     chunk_ids = {payload["chunk_id"] for payload, _ in retained}
     names = {payload.get("name") for payload, _ in retained}
@@ -274,11 +342,13 @@ class Refresh {
     )
     assert state.status == "in_progress"
 
-    service = FaissIndexingService(repository, _FakeEncoder())
+    encoder = _FakeEncoder()
+    service = FaissIndexingService(repository, encoder)
     result = service.index_workspace(repo_root=repo_root, workspace_json=workspace_json)
 
     assert result.files_indexed == 2
     assert result.documents_indexed >= 2
+    assert encoder.prepare_calls == 1
     workspace_state = repository.load_workspace_state()
     assert workspace_state is not None
     assert workspace_state.status == "completed"
@@ -319,5 +389,6 @@ class Large {
 
     assert result.files_indexed == 1
     assert result.documents_indexed >= 4
+    assert encoder.prepare_calls == 1
     assert any(batch_size > 1 for batch_size in encoder.batch_sizes)
     assert encoder.batch_sizes[-1] == 1

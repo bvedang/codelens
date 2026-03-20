@@ -15,7 +15,6 @@ from codelens.indexing.models import (
     MetadataCorruptionError,
     StoredChunk,
 )
-from codelens.indexing.locking import IndexLock, IndexLockError
 from codelens.indexing.service import FaissIndexingService, IndexingResult
 
 __all__ = [
@@ -25,8 +24,6 @@ __all__ = [
     "FaissIndexRepository",
     "FaissIndexingService",
     "IndexDocument",
-    "IndexLock",
-    "IndexLockError",
     "IndexStatus",
     "IndexingResult",
     "LateInteractionEncoder",
