@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Mapping
 
 from codelens.symbol_index import SymbolIndex
 from codelens.type_resolver import TypeIndex
