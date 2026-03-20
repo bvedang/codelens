@@ -20,7 +20,8 @@ def configure_logging(verbosity: int = 0) -> None:
 
     logging.basicConfig(
         level=level,
-        format="%(levelname)s %(name)s: %(message)s",
+        format="%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
     )
     if verbosity > 0:
         try:

@@ -5,7 +5,12 @@ from zipfile import ZipFile
 
 from codelens.chunker import parse_java
 from codelens.index_cache import IndexCache
-from codelens.workspace_runtime import build_workspace_resolver_context, parse_java_file_with_workspace
+from codelens.workspace_runtime import (
+    build_workspace_resolver_context,
+    build_workspace_shared_context,
+    build_workspace_source_set_context,
+    parse_java_file_with_workspace,
+)
 
 
 def test_build_workspace_resolver_context_assembles_source_binary_and_jdk_indexes(tmp_path):
@@ -178,3 +183,117 @@ def test_workspace_runtime_reuses_cached_indexes_until_inputs_change(tmp_path):
 
     assert third.source_index is not first.source_index
     assert third.jdk_index is first.jdk_index
+
+
+def test_workspace_runtime_reuses_shared_source_index_across_source_sets(tmp_path):
+    app_src = tmp_path / "app" / "src" / "main" / "java" / "com" / "app"
+    shared_src = tmp_path / "shared" / "src" / "main" / "java" / "com" / "shared"
+    app_src.mkdir(parents=True)
+    shared_src.mkdir(parents=True)
+    (app_src / "Consumer.java").write_text(
+        "package com.app; class Consumer {}",
+        encoding="utf-8",
+    )
+    (shared_src / "SharedGateway.java").write_text(
+        "package com.shared; class SharedGateway {}",
+        encoding="utf-8",
+    )
+
+    workspace_json = tmp_path / "workspace.json"
+    workspace_json.write_text(json.dumps({
+        "schema_version": 1,
+        "source_sets": {
+            ":app:main": {
+                "source_roots": [str((tmp_path / "app" / "src" / "main" / "java").resolve())],
+                "generated_source_roots": [],
+                "project_dependencies": [":shared:main"],
+                "external_jars": [],
+                "external_binary_entries": [],
+            },
+            ":shared:main": {
+                "source_roots": [str((tmp_path / "shared" / "src" / "main" / "java").resolve())],
+                "generated_source_roots": [],
+                "project_dependencies": [],
+                "external_jars": [],
+                "external_binary_entries": [],
+            },
+        },
+    }), encoding="utf-8")
+
+    cache = IndexCache()
+    shared_context = build_workspace_shared_context(
+        workspace_json=workspace_json,
+        index_cache=cache,
+    )
+
+    app_context = build_workspace_source_set_context(
+        shared_context.workspace.source_sets[":app:main"].source_set_id,
+        workspace=shared_context.workspace,
+        shared_context=shared_context,
+        index_cache=cache,
+    )
+    shared_source_context = build_workspace_source_set_context(
+        shared_context.workspace.source_sets[":shared:main"].source_set_id,
+        workspace=shared_context.workspace,
+        shared_context=shared_context,
+        index_cache=cache,
+    )
+
+    assert app_context.source_index is shared_context.source_index
+    assert shared_source_context.source_index is shared_context.source_index
+
+
+def test_workspace_runtime_invalidates_source_index_when_workspace_json_changes(tmp_path):
+    app_src = tmp_path / "app" / "src" / "main" / "java" / "com" / "app"
+    app_src.mkdir(parents=True)
+    java_file = app_src / "Consumer.java"
+    java_file.write_text(
+        "package com.app; class Consumer {}",
+        encoding="utf-8",
+    )
+
+    workspace_json = tmp_path / "workspace.json"
+    workspace_json.write_text(json.dumps({
+        "schema_version": 1,
+        "source_sets": {
+            ":app:main": {
+                "source_roots": [str((tmp_path / "app" / "src" / "main" / "java").resolve())],
+                "generated_source_roots": [],
+                "project_dependencies": [],
+                "external_jars": [],
+                "external_binary_entries": [],
+            },
+        },
+    }), encoding="utf-8")
+
+    cache = IndexCache()
+    first = build_workspace_resolver_context(
+        java_file,
+        workspace_json=workspace_json,
+        index_cache=cache,
+    )
+
+    workspace_json.write_text(json.dumps({
+        "schema_version": 1,
+        "source_sets": {
+            ":renamed-app:main": {
+                "source_roots": [str((tmp_path / "app" / "src" / "main" / "java").resolve())],
+                "generated_source_roots": [],
+                "project_dependencies": [],
+                "external_jars": [],
+                "external_binary_entries": [],
+            },
+        },
+    }), encoding="utf-8")
+
+    second = build_workspace_resolver_context(
+        java_file,
+        workspace_json=workspace_json,
+        index_cache=cache,
+    )
+
+    assert first.source_index is not second.source_index
+    assert first.source_set_id is not None
+    assert second.source_set_id is not None
+    assert first.source_set_id.key == ":app:main"
+    assert second.source_set_id.key == ":renamed-app:main"

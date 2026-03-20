@@ -179,6 +179,21 @@ class GradleWorkspaceModel:
                                     binary_index: SymbolIndex | None = None,
                                     jdk_index: SymbolIndex | None = None) -> TypeIndex:
         source_set_id = self.source_set_for_file(filepath)
+        return self.visible_type_index(
+            source_set_id,
+            source_index=source_index,
+            binary_index=binary_index,
+            jdk_index=jdk_index,
+        )
+
+    def visible_type_index(
+        self,
+        source_set_id: SourceSetId | None,
+        *,
+        source_index: SymbolIndex,
+        binary_index: SymbolIndex | None = None,
+        jdk_index: SymbolIndex | None = None,
+    ) -> TypeIndex:
         if source_set_id is None:
             return TypeIndex.empty()
 
