@@ -76,6 +76,20 @@ public void foo() {}
     assert method["javadoc"] == "/** API docs. */"
 
 
+def test_chunks_include_line_and_column_metadata():
+    code = b"""class X {
+    public void foo() {}
+}
+"""
+    chunks = parse_java(code, filepath="src/X.java")
+    method = _get_chunk(chunks, "method", "foo")
+
+    assert method["start_line"] == 2
+    assert method["end_line"] == 2
+    assert method["start_col"] == 5
+    assert method["end_col"] >= method["start_col"]
+
+
 # ===========================================================================
 # Integration: parse_java — import resolution
 # ===========================================================================

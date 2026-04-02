@@ -62,6 +62,36 @@ def delete_index_chunks_by_prefix(
     commit(session)
 
 
+def replace_index_chunks_by_prefix(
+    session: Session,
+    repo_root: str,
+    chunk_id_prefix: str,
+    new_chunks: list[IndexChunk],
+) -> int:
+    """Delete chunks matching prefix and insert replacements in one transaction.
+
+    Returns the number of chunks removed.
+    """
+    existing = session.exec(
+        select(IndexChunk).where(
+            col(IndexChunk.repo_root) == repo_root,
+            col(IndexChunk.chunk_id).like(f"{chunk_id_prefix}%"),
+        )
+    ).all()
+    removed_count = len(existing)
+    if removed_count:
+        session.exec(
+            delete(IndexChunk).where(
+                col(IndexChunk.repo_root) == repo_root,
+                col(IndexChunk.chunk_id).like(f"{chunk_id_prefix}%"),
+            )
+        )
+    for chunk in new_chunks:
+        session.add(chunk)
+    commit(session)
+    return removed_count
+
+
 def delete_index_chunks_by_repo(session: Session, repo_root: str) -> None:
     session.exec(delete(IndexChunk).where(col(IndexChunk.repo_root) == repo_root))
     commit(session)

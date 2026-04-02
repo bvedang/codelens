@@ -51,7 +51,7 @@ def _reset_fake_colbert():
 
 def test_colbert_encoder_sets_explicit_lengths(monkeypatch):
     pylate_module = ModuleType("pylate")
-    pylate_module.models = SimpleNamespace(ColBERT=_FakeColBERT)
+    setattr(pylate_module, "models", SimpleNamespace(ColBERT=_FakeColBERT))
     monkeypatch.setitem(sys.modules, "pylate", pylate_module)
 
     encoder = ColbertEncoder(
@@ -105,7 +105,7 @@ def test_colbert_encoder_raises_clear_error_without_pylate(monkeypatch):
 
 def test_colbert_encoder_close_drops_loaded_model(monkeypatch):
     pylate_module = ModuleType("pylate")
-    pylate_module.models = SimpleNamespace(ColBERT=_FakeColBERT)
+    setattr(pylate_module, "models", SimpleNamespace(ColBERT=_FakeColBERT))
     monkeypatch.setitem(sys.modules, "pylate", pylate_module)
 
     encoder = ColbertEncoder(device="cpu")
@@ -122,7 +122,7 @@ def test_colbert_encoder_close_drops_loaded_model(monkeypatch):
 def test_colbert_encoder_logs_model_load_and_first_batch(monkeypatch):
     events = []
     pylate_module = ModuleType("pylate")
-    pylate_module.models = SimpleNamespace(ColBERT=_FakeColBERT)
+    setattr(pylate_module, "models", SimpleNamespace(ColBERT=_FakeColBERT))
     monkeypatch.setitem(sys.modules, "pylate", pylate_module)
     monkeypatch.setattr(
         "codelens.indexing.encoder.log_event",
@@ -153,7 +153,7 @@ def test_configure_tqdm_lock_replaces_default_write_lock(monkeypatch):
             cls._lock = lock
 
     tqdm_module = ModuleType("tqdm")
-    tqdm_module.tqdm = _FakeTqdm
+    setattr(tqdm_module, "tqdm", _FakeTqdm)
     monkeypatch.setitem(sys.modules, "tqdm", tqdm_module)
 
     _DefaultLock.__name__ = "TqdmDefaultWriteLock"
@@ -175,7 +175,7 @@ def test_configure_tqdm_lock_preserves_existing_custom_lock(monkeypatch):
             cls._lock = lock
 
     tqdm_module = ModuleType("tqdm")
-    tqdm_module.tqdm = _FakeTqdm
+    setattr(tqdm_module, "tqdm", _FakeTqdm)
     monkeypatch.setitem(sys.modules, "tqdm", tqdm_module)
 
     _configure_tqdm_lock()

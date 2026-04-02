@@ -1,0 +1,131 @@
+{
+  "benchmark_version": "micronaut-retrieval-v1",
+  "cases": [
+    {
+      "case_id": "bean_lookup_impl",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "where is bean lookup implemented",
+      "verdict": "fail"
+    },
+    {
+      "case_id": "bean_resolution_context",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "how is bean resolution context implemented",
+      "verdict": "near_miss"
+    },
+    {
+      "case_id": "proxy_target_resolution",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "where is proxy target bean resolved",
+      "verdict": "fail"
+    },
+    {
+      "case_id": "bean_provider_lookup",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "how are bean provider lookups implemented",
+      "verdict": "near_miss"
+    },
+    {
+      "case_id": "default_bean_definitions_provider",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "where is the default bean definitions provider implemented",
+      "verdict": "near_miss"
+    },
+    {
+      "case_id": "http_client_exchange",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "where does the http client exchange happen",
+      "verdict": "fail"
+    },
+    {
+      "case_id": "http_client_filter_resolution",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "how are http client filters resolved",
+      "verdict": "near_miss"
+    },
+    {
+      "case_id": "route_building",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "where are routes built in micronaut",
+      "verdict": "near_miss"
+    },
+    {
+      "case_id": "annotated_filter_route_building",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "where are annotated filters turned into routes",
+      "verdict": "near_miss"
+    },
+    {
+      "case_id": "route_executor_selection",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "where is route executor selection implemented",
+      "verdict": "near_miss"
+    },
+    {
+      "case_id": "symbol_default_bean_context_getbean",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "DefaultBeanContext getBean",
+      "verdict": "fail"
+    },
+    {
+      "case_id": "symbol_default_http_client_exchange",
+      "line_hit": false,
+      "matched_file": null,
+      "matched_symbol": null,
+      "primary_rank": null,
+      "query": "DefaultHttpClient exchange",
+      "verdict": "near_miss"
+    }
+  ],
+  "codelens_git_commit": "5146a41fbab901eb56210e1841f200268231227b",
+  "codelens_git_dirty": true,
+  "fails": 4,
+  "fixture_path": "/Users/vedangbarhate/Desktop/workspace/codelens/evals/micronaut_retrieval.json",
+  "fixture_sha256": "093cd02e868b9de8887f72e8c23a5c0704caf011acd1481a47391215007ec444",
+  "line_tolerance": 25,
+  "model_name": "lightonai/ColBERT-Zero",
+  "near_misses": 8,
+  "passes": 0,
+  "ranking_config_version": "heuristic-rerank-v1",
+  "repo_commit": "6a11a05950f36193bd865d6b25c2bc17dfb4ff1c",
+  "repo_name": "micronaut-core",
+  "repository_candidate_limit_policy": "max(search_top_k * 20, 100)",
+  "repository_per_query_limit_policy": "max(search_top_k * 8, 32)",
+  "retrieval_version": "v1",
+  "search_request_width_policy": "max(user_top_k * 10, 50)",
+  "strong_passes": 0,
+  "top_k": 5
+}

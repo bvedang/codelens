@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from hashlib import sha1
 from pathlib import Path
-from typing import Iterable, Mapping
 
 INDEXABLE_KINDS = {
     "method",
@@ -18,6 +18,8 @@ POSITIONAL_KINDS = {"behavior", "skeleton"}
 MIN_SOURCE_LENGTH = 20
 SKELETON_SEGMENT_MAX_CHARS = 4096
 
+ChunkData = Mapping[str, object]
+
 
 @dataclass(frozen=True)
 class IndexDocument:
@@ -28,6 +30,10 @@ class IndexDocument:
     owner_chain: tuple[str, ...]
     package: str | None
     name: str | None
+    start_line: int | None
+    end_line: int | None
+    start_col: int | None
+    end_col: int | None
     signature: str | None
     return_type: str | None
     field_type: str | None
@@ -45,7 +51,7 @@ class IndexDocument:
 
 
 def build_index_documents(
-    chunks: Iterable[Mapping],
+    chunks: Iterable[ChunkData],
     *,
     repo_root: str | Path,
     indexed_at: str,
@@ -70,7 +76,7 @@ def build_index_documents(
         if len(source_text) < MIN_SOURCE_LENGTH:
             continue
 
-        filepath = chunk.get("filepath")
+        filepath = _optional_str(chunk.get("filepath"))
         if not filepath:
             continue
 
@@ -98,7 +104,7 @@ def build_index_documents(
 
 
 def build_index_document(
-    chunk: Mapping,
+    chunk: ChunkData,
     *,
     repo_root: str,
     file_path: str,
@@ -111,7 +117,7 @@ def build_index_document(
     declaration_override: str | None = None,
 ) -> IndexDocument:
     chunk_kind = str(chunk["kind"])
-    owner_chain = tuple(str(item) for item in chunk.get("owner_chain", ()))
+    owner_chain = tuple(_string_list(chunk.get("owner_chain")))
     name = _chunk_name(chunk, chunk_kind)
     annotations = tuple(_annotation_texts(chunk))
     modifiers = tuple(str(item) for item in chunk.get("modifiers", ()))
@@ -153,7 +159,7 @@ def build_index_document(
             package_name=package_name,
             owner_chain=owner_chain,
             name=name,
-            parameters=chunk.get("parameters"),
+            parameters=_optional_str(chunk.get("parameters")),
             position=position,
         ),
         repo_root=repo_root,
@@ -162,8 +168,12 @@ def build_index_document(
         owner_chain=owner_chain,
         package=package_name,
         name=name,
+        start_line=_optional_int(chunk.get("start_line")),
+        end_line=_optional_int(chunk.get("end_line")),
+        start_col=_optional_int(chunk.get("start_col")),
+        end_col=_optional_int(chunk.get("end_col")),
         signature=signature,
-        return_type=chunk.get("return_type"),
+        return_type=_optional_str(chunk.get("return_type")),
         field_type=field_type,
         annotations=annotations,
         modifiers=modifiers,
@@ -204,8 +214,8 @@ def build_chunk_id(
     return f"{repo_hash}:{file_path}:{chunk_kind}:{suffix}"
 
 
-def document_payload(document: IndexDocument) -> dict:
-    payload = {
+def document_payload(document: IndexDocument) -> dict[str, object]:
+    payload: dict[str, object] = {
         "chunk_id": document.chunk_id,
         "repo_root": document.repo_root,
         "file_path": document.file_path,
@@ -213,6 +223,10 @@ def document_payload(document: IndexDocument) -> dict:
         "owner_chain": list(document.owner_chain),
         "package": document.package,
         "name": document.name,
+        "start_line": document.start_line,
+        "end_line": document.end_line,
+        "start_col": document.start_col,
+        "end_col": document.end_col,
         "signature": document.signature,
         "return_type": document.return_type,
         "field_type": document.field_type,
@@ -233,7 +247,7 @@ def document_payload(document: IndexDocument) -> dict:
     }
 
 
-def _package_name(file_chunk: Mapping | None) -> str | None:
+def _package_name(file_chunk: ChunkData | None) -> str | None:
     if not file_chunk:
         return None
     package_decl = file_chunk.get("package")
@@ -246,19 +260,31 @@ def _relative_file_path(filepath: str | Path, repo_root: Path) -> str:
     return Path(filepath).resolve().relative_to(repo_root).as_posix()
 
 
-def _chunk_name(chunk: Mapping, chunk_kind: str) -> str | None:
+def _chunk_name(chunk: ChunkData, chunk_kind: str) -> str | None:
     if chunk_kind == "constructor" and chunk.get("owner_chain"):
-        return str(chunk.get("name") or chunk["owner_chain"][-1])
+        owner_chain = _string_list(chunk.get("owner_chain"))
+        return _optional_str(chunk.get("name")) or (
+            owner_chain[-1] if owner_chain else None
+        )
     if chunk_kind == "behavior":
         return None
-    name = chunk.get("name")
-    return str(name) if name else None
+    return _optional_str(chunk.get("name"))
 
 
-def _annotation_texts(chunk: Mapping) -> list[str]:
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value)
+    return None
+
+
+def _annotation_texts(chunk: ChunkData) -> list[str]:
     values: list[str] = []
-    for item in chunk.get("annotations", ()):
-        if isinstance(item, dict):
+    for item in _object_list(chunk.get("annotations")):
+        if isinstance(item, Mapping):
             text = item.get("text")
             if text:
                 values.append(str(text))
@@ -267,17 +293,17 @@ def _annotation_texts(chunk: Mapping) -> list[str]:
     return values
 
 
-def _build_signature(chunk: Mapping) -> str | None:
+def _build_signature(chunk: ChunkData) -> str | None:
     kind = chunk.get("kind")
-    name = chunk.get("name")
-    parameters = chunk.get("parameters")
-    modifiers = " ".join(str(item) for item in chunk.get("modifiers", ()))
+    name = _optional_str(chunk.get("name"))
+    parameters = _optional_str(chunk.get("parameters"))
+    modifiers = " ".join(_string_list(chunk.get("modifiers")))
     prefix = f"{modifiers} " if modifiers else ""
-    throws = " ".join(str(item) for item in chunk.get("throws", ()))
+    throws = " ".join(_string_list(chunk.get("throws")))
     throws_clause = f" throws {throws}" if throws else ""
 
     if kind == "method":
-        return_type = chunk.get("return_type")
+        return_type = _optional_str(chunk.get("return_type"))
         if name and parameters and return_type:
             return f"{prefix}{return_type} {name}{parameters}{throws_clause}".strip()
     if kind == "constructor" and name and parameters:
@@ -296,6 +322,24 @@ def _strip_clause_prefix(value: str | None, keyword: str) -> str | None:
     if not value:
         return None
     return value.replace(f"{keyword} ", "", 1).strip()
+
+
+def _optional_str(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _object_list(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _string_list(value: object) -> list[str]:
+    return [str(item) for item in _object_list(value)]
 
 
 def _qualified_name(

@@ -1,10 +1,12 @@
 """Tests for gradle_model.py."""
 
+from typing import cast
+
 from codelens.gradle_model import GradleWorkspaceModel, SourceSetId
 from codelens.symbol_index import SymbolDefinition, SymbolIndex
 
 
-def _workspace_dict(tmp_path):
+def _workspace_dict(tmp_path) -> dict[str, object]:
     base = tmp_path.resolve()
     return {
         "jdk_home": str(base / "fake-jdk"),
@@ -103,7 +105,8 @@ def test_visible_source_sets_include_transitive_project_dependencies(tmp_path):
 
 def test_visible_source_sets_can_be_inferred_from_classpath_outputs(tmp_path):
     workspace_dict = _workspace_dict(tmp_path)
-    workspace_dict["source_sets"][":orders:main"]["project_dependencies"] = []
+    source_sets = cast(dict[str, dict[str, object]], workspace_dict["source_sets"])
+    source_sets[":orders:main"]["project_dependencies"] = []
     workspace = GradleWorkspaceModel.from_dict(workspace_dict)
 
     visible = workspace.visible_source_sets(

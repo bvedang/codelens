@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any, Sequence
 
 from codelens.db.session import init_db
 from codelens.indexing import (
@@ -12,6 +15,7 @@ from codelens.indexing import (
     FaissIndexRepository,
 )
 from codelens.logging_config import configure_logging, get_logger, log_event
+from codelens.retrieval import RetrievalSearchService, load_eval_suite, run_eval_suite
 
 logger = get_logger(__name__)
 
@@ -95,6 +99,9 @@ def main(argv: list[str] | None = None) -> None:
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "index":
         _run_index_cli(args[1:])
+        return
+    if args and args[0] == "retrieve":
+        _run_retrieval_cli(args[1:])
         return
     if args and args[0] == "parse":
         _run_parse_cli(args[1:])
@@ -396,6 +403,220 @@ def _run_parse_cli(argv: list[str]) -> None:
             print(f"  imports     : {len(chunk.get('imports', []))} imports")
         else:
             print(chunk.get("text", "").strip())
+
+
+def _run_retrieval_cli(argv: list[str]) -> None:
+    cli = argparse.ArgumentParser(
+        description="Query the local CodeLens retrieval index."
+    )
+    cli.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="Increase log verbosity. Use -v for info, -vv for debug.",
+    )
+    subparsers = cli.add_subparsers(dest="retrieval_command", required=True)
+
+    search_parser = subparsers.add_parser(
+        "search", help="Search the local retrieval index."
+    )
+    search_parser.add_argument("--repo-root", required=True)
+    search_parser.add_argument("--query", required=True)
+    search_parser.add_argument("--top-k", type=int, default=5)
+    search_parser.add_argument("--kind")
+    search_parser.add_argument("--source-set")
+    search_parser.add_argument("--file-path")
+    search_parser.add_argument("--device")
+    search_parser.add_argument("--json", action="store_true")
+
+    read_parser = subparsers.add_parser(
+        "read", help="Read one indexed chunk and nearby context."
+    )
+    read_parser.add_argument("--repo-root", required=True)
+    read_parser.add_argument("--chunk-id", required=True)
+    read_parser.add_argument("--no-surrounding", action="store_true")
+    read_parser.add_argument("--json", action="store_true")
+
+    eval_parser = subparsers.add_parser(
+        "eval", help="Run a retrieval benchmark fixture."
+    )
+    eval_parser.add_argument("--repo-root", required=True)
+    eval_parser.add_argument(
+        "--fixture",
+        default=str(
+            Path(__file__).resolve().parents[2] / "evals" / "micronaut_retrieval.json"
+        ),
+    )
+    eval_parser.add_argument("--top-k", type=int)
+    eval_parser.add_argument("--device")
+    eval_parser.add_argument("--output")
+    eval_parser.add_argument("--json", action="store_true")
+
+    args = cli.parse_args(argv)
+    configure_logging(args.verbose)
+    init_db()
+
+    repo_root = Path(args.repo_root).resolve()
+    repository = FaissIndexRepository(repo_root)
+
+    if args.retrieval_command == "read":
+        service = RetrievalSearchService(repository, _NoopQueryEncoder())
+        result = service.read_code(
+            args.chunk_id,
+            include_surrounding=not args.no_surrounding,
+        )
+        if result is None:
+            raise SystemExit(f"Chunk not found: {args.chunk_id}")
+        _print_retrieval_read(result.to_dict(), as_json=args.json)
+        return
+
+    encoder = ColbertEncoder(device=args.device)
+    try:
+        service = RetrievalSearchService(repository, encoder)
+        if args.retrieval_command == "eval":
+            suite = load_eval_suite(args.fixture)
+            result = run_eval_suite(
+                service,
+                suite,
+                repo_root=str(repo_root),
+                top_k=args.top_k,
+            )
+            payload = result.to_dict()
+            fixture_path = Path(args.fixture).resolve()
+            payload.setdefault("fixture_path", str(fixture_path))
+            payload.setdefault("fixture_sha256", _sha256_file(fixture_path))
+            payload.setdefault("line_tolerance", getattr(suite, "line_tolerance", 25))
+            payload.setdefault(
+                "search_request_width_policy", "max(user_top_k * 10, 50)"
+            )
+            payload.setdefault(
+                "repository_candidate_limit_policy",
+                "max(search_top_k * 20, 100)",
+            )
+            payload.setdefault(
+                "repository_per_query_limit_policy",
+                "max(search_top_k * 8, 32)",
+            )
+            if args.output:
+                output_path = Path(args.output).resolve()
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(
+                    json.dumps(payload, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+            _print_retrieval_eval(payload, as_json=args.json)
+            return
+
+        result = service.search_code(
+            args.query,
+            repo_root=str(repo_root),
+            top_k=args.top_k,
+            kind=args.kind,
+            source_set=args.source_set,
+            file_path=args.file_path,
+        )
+    finally:
+        encoder.close()
+    _print_retrieval_search(result.to_dict(), as_json=args.json)
+
+
+class _NoopQueryEncoder:
+    @property
+    def model_name(self) -> str:
+        return "noop"
+
+    def embed_queries(self, texts: Sequence[str]) -> list[list[list[float]]]:
+        raise RuntimeError("embed_queries should not be called for read-only commands")
+
+
+def _print_retrieval_search(payload: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    print(f"query         : {payload['query']}")
+    print(f"returned_count: {payload['returned_count']}")
+    print(f"has_more      : {payload['has_more']}")
+    for index, result in enumerate(payload["results"], start=1):
+        print()
+        print(
+            f"[{index}] {result['kind']} {result.get('symbol') or result['chunk_id']}"
+        )
+        print(f"  chunk_id   : {result['chunk_id']}")
+        print(f"  file       : {result['file_path']}")
+        if result.get("start_line") is not None:
+            print(f"  lines      : {result['start_line']}-{result['end_line']}")
+        print(f"  score      : {result['score']:.3f}")
+        print(f"  confidence : {result['confidence']}")
+        print(f"  summary    : {result['summary']}")
+        if result.get("why_matched"):
+            print(f"  why        : {', '.join(result['why_matched'])}")
+
+
+def _print_retrieval_read(payload: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    print(f"chunk_id   : {payload['chunk_id']}")
+    print(f"kind       : {payload['kind']}")
+    print(f"symbol     : {payload.get('symbol') or '-'}")
+    print(f"file       : {payload['file_path']}")
+    if payload.get("start_line") is not None:
+        print(f"lines      : {payload['start_line']}-{payload['end_line']}")
+    print(f"summary    : {payload['summary']}")
+    print("source_text:")
+    print(payload["source_text"])
+    if payload.get("neighbors"):
+        print("neighbors:")
+        for neighbor in payload["neighbors"]:
+            line_range = "-"
+            if neighbor.get("start_line") is not None:
+                line_range = f"{neighbor['start_line']}-{neighbor['end_line']}"
+            print(
+                f"  - {neighbor['kind']} {neighbor.get('symbol') or neighbor['chunk_id']} "
+                f"({line_range})"
+            )
+
+
+def _print_retrieval_eval(payload: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    print(f"benchmark_version: {payload['benchmark_version']}")
+    print(f"repo_name         : {payload['repo_name']}")
+    print(f"repo_commit       : {payload['repo_commit']}")
+    print(f"codelens_commit   : {payload.get('codelens_git_commit', '-')}")
+    print(f"codelens_dirty    : {payload.get('codelens_git_dirty', '-')}")
+    print(f"fixture_path      : {payload.get('fixture_path', '-')}")
+    print(f"fixture_sha256    : {payload.get('fixture_sha256', '-')}")
+    print(f"model             : {payload['model_name']}")
+    print(f"retrieval_version : {payload.get('retrieval_version', '-')}")
+    print(f"ranking_config    : {payload.get('ranking_config_version', '-')}")
+    print(f"top_k             : {payload['top_k']}")
+    print(f"line_tolerance    : {payload.get('line_tolerance', '-')}")
+    print(f"strong_passes     : {payload['strong_passes']}")
+    print(f"passes            : {payload['passes']}")
+    print(f"near_misses       : {payload['near_misses']}")
+    print(f"fails             : {payload['fails']}")
+    for case in payload["cases"]:
+        print()
+        print(f"[{case['verdict']}] {case['case_id']}")
+        print(f"  query        : {case['query']}")
+        print(f"  primary_rank : {case.get('primary_rank') or '-'}")
+        print(f"  matched_file : {case.get('matched_file') or '-'}")
+        print(f"  matched_sym  : {case.get('matched_symbol') or '-'}")
+        print(f"  line_hit     : {case['line_hit']}")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 if __name__ == "__main__":

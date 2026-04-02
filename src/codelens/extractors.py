@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
+from typing import Any
 
 from codelens.ast_helpers import (
     declarator_names,
     declared_type_str,
     first_named,
     node_name,
-    text,
+    node_text,
 )
 from codelens.constants import COMMENT_TYPES, TYPE_NODES
 from codelens.type_resolver import TypeResolver
 
 _CLASS_LITERAL_RE = re.compile(r"^([A-Za-z_][$\w]*(?:\.[A-Za-z_][$\w]*)*)\.class$")
+FileContext = Mapping[str, Any]
+AnnotationData = dict[str, Any]
+FieldTypeMap = Mapping[str, str]
+SymbolTypeMap = dict[str, str]
+RecordComponent = dict[str, str]
 
 
 def extract_preceding_comment(code: bytes, node) -> str | None:
@@ -29,7 +36,7 @@ def extract_preceding_comment(code: bytes, node) -> str | None:
             break
         if prev.type not in COMMENT_TYPES:
             break
-        comments.append(text(code, prev))
+        comments.append(node_text(code, prev))
         current_start = prev.start_byte
         prev = prev.prev_sibling
 
@@ -74,20 +81,20 @@ def extract_annotations_full(
     resolver: TypeResolver | None = None,
 ) -> list[dict]:
     """Get annotations with their attribute values parsed out."""
-    annotations = []
+    annotations: list[AnnotationData] = []
     modifiers = first_named(node, "modifiers")
     source = modifiers if modifiers else node
     for child in source.named_children:
         if child.type == "marker_annotation":
             annotations.append(
                 {
-                    "text": text(code, child),
+                    "text": node_text(code, child),
                     "name": node_name(code, child),
                     "attributes": {},
                 }
             )
         elif child.type == "annotation":
-            attrs = {}
+            attrs: dict[str, str] = {}
             args = child.child_by_field_name("arguments")
             if args:
                 for arg in args.named_children:
@@ -95,22 +102,22 @@ def extract_annotations_full(
                         key_node = arg.child_by_field_name("key")
                         val_node = arg.child_by_field_name("value")
                         if key_node and val_node:
-                            attrs[text(code, key_node)] = (
+                            attrs[node_text(code, key_node)] = (
                                 _resolve_annotation_attribute_value(
-                                    text(code, val_node),
+                                    node_text(code, val_node),
                                     file_ctx,
                                     resolver,
                                 )
                             )
                     else:
                         attrs["value"] = _resolve_annotation_attribute_value(
-                            text(code, arg),
+                            node_text(code, arg),
                             file_ctx,
                             resolver,
                         )
             annotations.append(
                 {
-                    "text": text(code, child),
+                    "text": node_text(code, child),
                     "name": node_name(code, child),
                     "attributes": attrs,
                 }
@@ -118,15 +125,17 @@ def extract_annotations_full(
     return annotations
 
 
-def annotation_texts(annots: list[dict]) -> list[str]:
-    return [a["text"] for a in annots]
+def annotation_texts(annots: list[AnnotationData]) -> list[str]:
+    return [str(a["text"]) for a in annots]
 
 
 def extract_modifiers(code: bytes, node) -> list[str]:
     mods_node = first_named(node, "modifiers")
     if mods_node is None:
         return []
-    return [text(code, child) for child in mods_node.children if not child.is_named]
+    return [
+        node_text(code, child) for child in mods_node.children if not child.is_named
+    ]
 
 
 def flatten_method_chain(node) -> list[str]:
@@ -236,7 +245,7 @@ def _collect_declared_symbols(
         declared_type = declared_type_str(code, node)
         name = node.child_by_field_name("name")
         if name:
-            declared_names = [text(code, name)]
+            declared_names = [node_text(code, name)]
 
     if declared_type:
         resolved_type = (
@@ -274,7 +283,7 @@ def extract_fields_accessed(code: bytes, node, class_fields: list[str]) -> list[
     return sorted(accessed)
 
 
-def _walk_field_access(node, class_fields: list[str], accessed: set):
+def _walk_field_access(node, class_fields: list[str], accessed: set[str]) -> None:
     if node.type == "field_access":
         obj = node.child_by_field_name("object")
         field = node.child_by_field_name("field")
@@ -316,15 +325,15 @@ def extract_throws(code: bytes, node) -> list[str]:
     if throws is None:
         return []
     return [
-        text(code, child)
+        node_text(code, child)
         for child in throws.named_children
         if child.type in ("type_identifier", "scoped_type_identifier", "generic_type")
     ]
 
 
-def extract_record_components(code: bytes, node) -> list[dict]:
+def extract_record_components(code: bytes, node) -> list[RecordComponent]:
     """Extract components from record Foo(String bar, int baz)."""
-    components = []
+    components: list[RecordComponent] = []
     params = node.child_by_field_name("parameters")
     if params is None:
         params = first_named(node, "formal_parameters")
@@ -337,8 +346,8 @@ def extract_record_components(code: bytes, node) -> list[dict]:
             if ptype and pname:
                 components.append(
                     {
-                        "name": text(code, pname),
-                        "type": text(code, ptype),
+                        "name": node_text(code, pname),
+                        "type": node_text(code, ptype),
                     }
                 )
     return components

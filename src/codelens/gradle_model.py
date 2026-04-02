@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping, cast
 
 from codelens.symbol_index import SymbolIndex
 from codelens.type_resolver import TypeIndex
@@ -55,9 +55,9 @@ class GradleWorkspaceModel:
     jdk_home: str | None = None
 
     @classmethod
-    def from_dict(cls, data: dict) -> "GradleWorkspaceModel":
+    def from_dict(cls, data: dict[str, Any]) -> "GradleWorkspaceModel":
         validate_workspace_export(data, require_schema_version=False)
-        raw_source_sets = data.get("source_sets", {})
+        raw_source_sets = cast(dict[str, dict[str, Any]], data.get("source_sets", {}))
         source_sets: dict[str, SourceSetModel] = {}
         for key, raw in raw_source_sets.items():
             source_set_id = SourceSetId.from_key(key)
@@ -84,7 +84,7 @@ class GradleWorkspaceModel:
             )
         return cls(
             source_sets=source_sets,
-            jdk_home=data.get("jdk_home"),
+            jdk_home=cast(str | None, data.get("jdk_home")),
         )
 
     @classmethod
